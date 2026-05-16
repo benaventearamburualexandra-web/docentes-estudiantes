@@ -147,7 +147,7 @@ async function initDb() {
       }
 
     } catch (err) {
-      console.error(`❌ Error al inicializar base de datos local:`, err);
+      console.error(`❌ Error al inicializar la base de datos:`, err);
     }
 }
 
