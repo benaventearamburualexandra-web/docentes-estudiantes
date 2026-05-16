@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: asistencia-docente
+    runtime: node
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: PORT
+        value: 3000
+      - key: RENDER
+        value: true
+      - key: DATABASE_URL
+        sync: false # Esto te pedirá el enlace de Supabase en el panel de Render
