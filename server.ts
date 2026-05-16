@@ -90,7 +90,8 @@ async function initDb() {
           type TEXT,
           date TEXT,
           time TEXT,
-          status TEXT DEFAULT 'PUNTUAL'
+          status TEXT DEFAULT 'PUNTUAL',
+          UNIQUE(teacher_id, date, type)
         );
   
         CREATE TABLE IF NOT EXISTS absences (
@@ -112,6 +113,7 @@ async function initDb() {
           first_name TEXT NOT NULL,
           last_name TEXT NOT NULL,
           grade_section TEXT,
+          parent_phone TEXT,
           schedule TEXT DEFAULT '{}'
         );
 
@@ -121,7 +123,8 @@ async function initDb() {
           type TEXT,
           date TEXT,
           time TEXT,
-          status TEXT DEFAULT 'PUNTUAL'
+          status TEXT DEFAULT 'PUNTUAL',
+          UNIQUE(student_id, date, type)
         );
 
         CREATE TABLE IF NOT EXISTS student_absences (
@@ -556,11 +559,11 @@ async function startServer() {
   });
 
   app.post("/api/students", async (req, res) => {
-    const { id, first_name, last_name, grade_section, schedule } = req.body;
+    const { id, first_name, last_name, grade_section, parent_phone, schedule } = req.body;
     try {
       await pool.query(
-        "INSERT INTO students (id, first_name, last_name, grade_section, schedule) VALUES ($1, $2, $3, $4, $5)",
-        [id, first_name, last_name, grade_section, JSON.stringify(schedule)]
+        "INSERT INTO students (id, first_name, last_name, grade_section, parent_phone, schedule) VALUES ($1, $2, $3, $4, $5, $6)",
+        [id, first_name, last_name, grade_section, parent_phone, JSON.stringify(schedule)]
       );
       res.json({ success: true });
     } catch (e: any) {
@@ -803,81 +806,6 @@ async function startServer() {
   app.post("/api/admin/trigger-absences", async (req, res) => {
     await processAutomaticAbsences();
     res.json({ success: true, message: "Verificación de inasistencias completada." });
-  });
-
-  // --- LÓGICA DE FALTAS AUTOMÁTICAS ---
-  async function processAutomaticAbsences() {
-    console.log("⏱️ Verificando inasistencias automáticas...");
-    const now = new Date();
-    const timeZone = 'America/Lima';
-    const date = new Intl.DateTimeFormat('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit', timeZone }).format(now);
-    const dayName = new Intl.DateTimeFormat('en-US', { weekday: 'long', timeZone }).format(now).toLowerCase();
-    
-    // Obtener minutos actuales desde medianoche
-    const currentMins = now.getHours() * 60 + now.getMinutes();
-
-    try {
-      // 1. Verificar Docentes
-      const teachers = await pool.query("SELECT id, schedule FROM teachers");
-      for (const t of teachers.rows) {
-        const sched = typeof t.schedule === 'string' ? JSON.parse(t.schedule) : t.schedule;
-        const daySched = sched[dayName];
-        if (daySched?.enabled) {
-          // Buscamos el primer bloque del día
-          let startStr = daySched.slots?.[0]?.start || daySched.start;
-          if (startStr) {
-            const [sh, sm] = startStr.split(':').map(Number);
-            const startMins = sh * 60 + sm;
-            // Si ya pasó más de 1 hora (60 min) del inicio y no hay registro de entrada
-            if (currentMins > (startMins + 60)) {
-              const att = await pool.query("SELECT id FROM attendance WHERE teacher_id = $1 AND date = $2 AND type = 'ENTRADA'", [t.id, date]);
-              if (att.rows.length === 0) {
-                const existAbs = await pool.query("SELECT id FROM absences WHERE teacher_id = $1 AND date = $2", [t.id, date]);
-                if (existAbs.rows.length === 0) {
-                  await pool.query("INSERT INTO absences (teacher_id, date, status, reason) VALUES ($1, $2, 'INJUSTIFICADA', 'SISTEMA: NO REGISTRÓ ENTRADA')", [t.id, date]);
-                  console.log(`📌 Falta automática: Docente ${t.id}`);
-                }
-              }
-            }
-          }
-        }
-      }
-
-      // 2. Verificar Estudiantes
-      const students = await pool.query("SELECT id, schedule FROM students");
-      for (const s of students.rows) {
-        const sched = typeof s.schedule === 'string' ? JSON.parse(s.schedule) : s.schedule;
-        const daySched = sched[dayName];
-        if (daySched?.enabled) {
-          let startStr = daySched.slots?.[0]?.start || daySched.start;
-          if (startStr) {
-            const [sh, sm] = startStr.split(':').map(Number);
-            const startMins = sh * 60 + sm;
-            if (currentMins > (startMins + 60)) {
-              const att = await pool.query("SELECT id FROM student_attendance WHERE student_id = $1 AND date = $2 AND type = 'ENTRADA'", [s.id, date]);
-              if (att.rows.length === 0) {
-                const existAbs = await pool.query("SELECT id FROM student_absences WHERE student_id = $1 AND date = $2", [s.id, date]);
-                if (existAbs.rows.length === 0) {
-                  await pool.query("INSERT INTO student_absences (student_id, date, status, reason) VALUES ($1, $2, 'INJUSTIFICADA', 'SISTEMA: NO REGISTRÓ ENTRADA')", [s.id, date]);
-                  console.log(`📌 Falta automática: Estudiante ${s.id}`);
-                }
-              }
-            }
-          }
-        }
-      }
-    } catch (e) {
-      console.error("Error en proceso de faltas:", e);
-    }
-  }
-
-  // Revisar cada 30 minutos
-  setInterval(processAutomaticAbsences, 30 * 60 * 1000);
-
-  // Ruta para activar la revisión manualmente desde el panel (opcional)
-  app.post("/api/admin/trigger-absences", async (req, res) => {
-    await processAutomaticAbsences();
-    res.json({ success: true });
   });
 
   // Vite middleware for development

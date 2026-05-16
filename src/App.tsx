@@ -7,7 +7,7 @@ import {
   QrCode, Camera, Keyboard, UserCheck, LogOut, LogIn, Loader2, 
   CheckCircle2, AlertCircle, Settings, Download, UserPlus, X, 
   Users, LayoutDashboard, FileText, Printer, Trash2, GraduationCap,
-  ClipboardList
+  ClipboardList, BarChart3, TrendingUp, TrendingDown, Calendar
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { format, parseISO, getISOWeek, getISOWeekYear } from 'date-fns';
@@ -34,6 +34,7 @@ interface Student {
   first_name: string;
   last_name: string;
   grade_section: string;
+  parent_phone: string;
   schedule?: Record<string, { enabled: boolean; start?: string; end?: string; slots?: { start: string, end: string }[] }>;
 }
 
@@ -79,7 +80,7 @@ export default function App() {
     } catch (e) { return null; }
   });
   
-  const [activeTab, setActiveTab] = useState<'asistencia' | 'docentes' | 'reportes' | 'faltas' | 'estudiantes'>('asistencia');
+  const [activeTab, setActiveTab] = useState<'panel' | 'asistencia' | 'docentes' | 'reportes' | 'faltas' | 'estudiantes'>('panel');
   const [mode, setMode] = useState<'scan' | 'manual'>('scan');
   const [attendanceType, setAttendanceType] = useState<'ENTRADA' | 'SALIDA'>('ENTRADA');
   const attendanceTypeRef = useRef(attendanceType);
@@ -119,13 +120,14 @@ export default function App() {
   const [loginUsername, setLoginUsername] = useState('admin');
   const [password, setPassword] = useState('');
   const [newTeacher, setNewTeacher] = useState({ id: '', first_name: '', last_name: '', specialty: '', photo_url: '', schedule: INITIAL_SCHEDULE });
-  const [newStudent, setNewStudent] = useState({ id: '', first_name: '', last_name: '', grade_section: '', schedule: INITIAL_SCHEDULE });
+  const [newStudent, setNewStudent] = useState({ id: '', first_name: '', last_name: '', grade_section: '', parent_phone: '', schedule: INITIAL_SCHEDULE });
   const [studentRecords, setStudentRecords] = useState<any[]>([]);
   const [studentAbsences, setStudentAbsences] = useState<any[]>([]);
   const [editingTeacher, setEditingTeacher] = useState<Teacher | null>(null);
   const [newAbsence, setNewAbsence] = useState({ teacherId: '', date: new Date().toISOString().split('T')[0], status: 'INJUSTIFICADA', reason: '' });
   const [newStudentAbsence, setNewStudentAbsence] = useState({ studentId: '', date: new Date().toISOString().split('T')[0], status: 'INJUSTIFICADA', reason: '' });
   const [selectedTeacherQR, setSelectedTeacherQR] = useState<Teacher | null>(null);
+  const [selectedStudentQR, setSelectedStudentQR] = useState<Student | null>(null);
   const [reportMonth, setReportMonth] = useState(new Date().toISOString().slice(0, 7));
   const [reportWeek, setReportWeek] = useState('');
 
@@ -138,6 +140,72 @@ export default function App() {
   const lastScannedRef = useRef<{ id: string, time: number }>({ id: '', time: 0 });
   const [dbStatus, setDbStatus] = useState<'connected' | 'error' | 'checking' | 'reconnecting'>('checking');
   const [dbErrorMessage, setDbErrorMessage] = useState<string | null>(null);
+
+  const stats = useMemo(() => {
+    const now = new Date();
+    const last7Days = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(now);
+      d.setDate(d.getDate() - i);
+      return d.toISOString().split('T')[0];
+    }).reverse();
+
+    const today = last7Days[6];
+    const totalMembers = teachers.length + students.length;
+    
+    const allRecords = [...records, ...studentRecords];
+    const allAbsences = [...absences, ...studentAbsences];
+
+    const attToday = allRecords.filter(r => r.date === today && r.type === 'ENTRADA').length;
+    
+    const totalEntries = allRecords.filter(r => r.type === 'ENTRADA').length;
+    const punctualCount = allRecords.filter(r => r.type === 'ENTRADA' && r.status === 'PUNTUAL').length;
+    const punctualityRate = totalEntries > 0 ? ((punctualCount / totalEntries) * 100).toFixed(2) : "0.00";
+
+    const totalFaltas = allAbsences.length;
+    const totalPossible = totalEntries + totalFaltas;
+    const absenceRate = totalPossible > 0 ? ((totalFaltas / totalPossible) * 100).toFixed(2) : "0.00";
+
+    // Cálculo de tendencias para los gráficos de barras
+    const trends = {
+      events: last7Days.map(date => allRecords.filter(r => r.date === date).length),
+      punctuality: last7Days.map(date => {
+        const dayEntries = allRecords.filter(r => r.date === date && r.type === 'ENTRADA');
+        return dayEntries.length > 0 ? (dayEntries.filter(r => r.status === 'PUNTUAL').length / dayEntries.length) * 100 : 0;
+      }),
+      absences: last7Days.map(date => allAbsences.filter(a => a.date === date).length),
+      activeUsers: last7Days.map(date => {
+        const ids = allRecords.filter(r => r.date === date).map(r => r.teacher_id || (r as any).student_id);
+        return new Set(ids.filter(Boolean)).size;
+      })
+    };
+
+    return {
+      totalMembers,
+      attToday,
+      punctualityRate,
+      absenceRate,
+      totalEvents: allRecords.length,
+      trends
+    };
+  }, [records, studentRecords, teachers, students, absences, studentAbsences]);
+
+  const MiniBarChart = ({ data, color }: { data: number[], color: string }) => {
+    const max = Math.max(...data, 5);
+    return (
+      <div className="flex items-end gap-1 h-8 mt-4">
+        {data.map((val, i) => (
+          <motion.div
+            key={i}
+            initial={{ height: 0 }}
+            animate={{ height: `${Math.max((val / max) * 100, 10)}%` }}
+            style={{ backgroundColor: color }}
+            className="flex-1 rounded-t-sm opacity-40 hover:opacity-100 transition-all cursor-help"
+            title={`Valor: ${val.toFixed(0)}`}
+          />
+        ))}
+      </div>
+    );
+  };
 
   useEffect(() => {
     attendanceTypeRef.current = attendanceType;
@@ -308,7 +376,8 @@ export default function App() {
   };
 
   const downloadQRCode = () => {
-    if (!selectedTeacherQR) return;
+    const entity = selectedTeacherQR || selectedStudentQR;
+    if (!entity) return;
     const svg = document.getElementById("teacher-qr-code");
     if (!svg) return;
 
@@ -328,14 +397,14 @@ export default function App() {
         ctx.fillStyle = "black";
         ctx.font = "bold 20px sans-serif";
         ctx.textAlign = "center";
-        ctx.fillText(`${selectedTeacherQR.first_name} ${selectedTeacherQR.last_name}`, 200, 380);
+        ctx.fillText(`${entity.first_name} ${entity.last_name}`, 200, 380);
         ctx.font = "14px monospace";
-        ctx.fillText(`ID: ${selectedTeacherQR.id}`, 200, 410);
+        ctx.fillText(`ID: ${entity.id}`, 200, 410);
       }
       const pngUrl = canvas.toDataURL("image/png");
       const link = document.createElement("a");
       link.href = pngUrl;
-      link.download = `QR_${selectedTeacherQR.last_name}_${selectedTeacherQR.first_name}.png`;
+      link.download = `QR_${entity.last_name}_${entity.first_name}.png`;
       link.click();
     };
     img.src = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(svgData)));
@@ -723,7 +792,8 @@ export default function App() {
       const data = await registerStudent(newStudent);
       if (data.success) {
         toast.success(data.offline ? 'Guardado Offline' : 'Estudiante registrado', { id: loading });
-        setNewStudent({ id: '', first_name: '', last_name: '', grade_section: '', schedule: INITIAL_SCHEDULE });
+        setSelectedStudentQR({ ...newStudent }); // Mostrar QR inmediatamente
+        setNewStudent({ id: '', first_name: '', last_name: '', grade_section: '', parent_phone: '', schedule: INITIAL_SCHEDULE });
         setShowAddStudent(false);
         fetchData();
       }
@@ -799,7 +869,8 @@ export default function App() {
         </div>
 
         <div className="flex-1 px-4 py-2 space-y-1 flex md:flex-col overflow-x-auto custom-scrollbar">
-          <button onClick={() => setActiveTab('asistencia')} className={`flex items-center gap-3 px-4 py-3 rounded-xl font-bold transition-all ${activeTab === 'asistencia' ? 'bg-[#F1F1F1] text-[#24157A] shadow-sm' : 'text-slate-800 hover:bg-[#F1F1F1]'}`} aria-label="Ver escáner de asistencia"><LayoutDashboard size={20} /><span>Escáner</span></button>
+          <button onClick={() => setActiveTab('panel')} className={`flex items-center gap-3 px-4 py-3 rounded-xl font-bold transition-all ${activeTab === 'panel' ? 'bg-[#F1F1F1] text-[#24157A] shadow-sm' : 'text-slate-800 hover:bg-[#F1F1F1]'}`}><BarChart3 size={20} /><span>Panel</span></button>
+          <button onClick={() => setActiveTab('asistencia')} className={`flex items-center gap-3 px-4 py-3 rounded-xl font-bold transition-all ${activeTab === 'asistencia' ? 'bg-[#F1F1F1] text-[#24157A] shadow-sm' : 'text-slate-800 hover:bg-[#F1F1F1]'}`} aria-label="Ver escáner de asistencia"><QrCode size={20} /><span>Escáner</span></button>
           {adminUser ? (
             <>
               <button onClick={() => setActiveTab('docentes')} className={`flex items-center gap-3 px-4 py-3 rounded-xl font-bold transition-all ${activeTab === 'docentes' ? 'bg-[#F1F1F1] text-[#24157A]' : 'text-slate-800 hover:bg-[#F1F1F1]'}`} aria-label="Gestionar docentes"><Users size={20} /><span>Docentes</span></button>
@@ -833,6 +904,67 @@ export default function App() {
         </div>
 
         <div className="relative flex-1">
+          {activeTab === 'panel' && (
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-8">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-3xl font-black text-white tracking-tight">Panel de Control</h2>
+                  <p className="text-white/80 font-medium">Estadísticas generales del sistema</p>
+                </div>
+                <div className="bg-white/20 px-4 py-2 rounded-2xl backdrop-blur-md border border-white/30 text-white flex items-center gap-2">
+                  <Calendar size={18} />
+                  <span className="font-bold">{new Date().toLocaleDateString('es-PE', { day: 'numeric', month: 'long' })}</span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                {/* Card Miembros */}
+                <div className="bg-white p-6 rounded-[2rem] border border-[#D9D9D9] shadow-sm">
+                  <div className="w-12 h-12 bg-[#24157A] rounded-2xl flex items-center justify-center text-white mb-4">
+                    <Users size={24} />
+                  </div>
+                  <p className="text-slate-500 font-bold text-xs uppercase tracking-wider">Miembros Activos</p>
+                  <h3 className="text-4xl font-black text-[#24157A] mt-1">{stats.totalMembers}</h3>
+                  <p className="text-[10px] text-slate-400 mt-2 font-bold">DOCENTES Y ESTUDIANTES</p>
+                  <MiniBarChart data={stats.trends.activeUsers} color="#24157A" />
+                </div>
+
+                {/* Card Asistencias Hoy */}
+                <div className="bg-white p-6 rounded-[2rem] border border-[#D9D9D9] shadow-sm">
+                  <div className="w-12 h-12 bg-[#59C65B] rounded-2xl flex items-center justify-center text-white mb-4">
+                    <TrendingUp size={24} />
+                  </div>
+                  <p className="text-slate-500 font-bold text-xs uppercase tracking-wider">Eventos Totales</p>
+                  <h3 className="text-4xl font-black text-[#59C65B] mt-1">{stats.totalEvents}</h3>
+                  <p className="text-[10px] text-slate-400 mt-2 font-bold">CONTABILIZADOS</p>
+                  <MiniBarChart data={stats.trends.events} color="#59C65B" />
+                </div>
+
+                {/* Card Puntualidad */}
+                <div className="bg-white p-6 rounded-[2rem] border border-[#D9D9D9] shadow-sm">
+                  <div className="w-12 h-12 bg-[#9A87E8] rounded-2xl flex items-center justify-center text-white mb-4">
+                    <TrendingUp size={24} />
+                  </div>
+                  <p className="text-slate-500 font-bold text-xs uppercase tracking-wider">Tasa Puntualidad</p>
+                  <h3 className="text-4xl font-black text-[#24157A] mt-1">{stats.punctualityRate}%</h3>
+                  <p className="text-[10px] text-emerald-500 mt-2 font-bold">REGISTROS A TIEMPO</p>
+                  <MiniBarChart data={stats.trends.punctuality} color="#9A87E8" />
+                </div>
+
+                {/* Card Inasistencias */}
+                <div className="bg-white p-6 rounded-[2rem] border border-[#D9D9D9] shadow-sm">
+                  <div className="w-12 h-12 bg-[#F4CD18] rounded-2xl flex items-center justify-center text-[#24157A] mb-4">
+                    <TrendingDown size={24} />
+                  </div>
+                  <p className="text-slate-500 font-bold text-xs uppercase tracking-wider">Tasa de Faltas</p>
+                  <h3 className="text-4xl font-black text-[#24157A] mt-1">{stats.absenceRate}%</h3>
+                  <p className="text-[10px] text-rose-500 mt-2 font-bold">PROMEDIO MENSUAL</p>
+                  <MiniBarChart data={stats.trends.absences} color="#F4CD18" />
+                </div>
+              </div>
+            </motion.div>
+          )}
+
           {/* Escáner - Siempre montado para evitar recargas de cámara */}
           <div className={activeTab === 'asistencia' ? 'block' : 'hidden'}>
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-8">
@@ -943,6 +1075,7 @@ export default function App() {
                       <th className="px-6 py-4 text-xs font-black text-slate-700 uppercase">ID</th>
                       <th className="px-6 py-4 text-xs font-black text-slate-700 uppercase">Nombre Completo</th>
                       <th className="px-6 py-4 text-xs font-black text-slate-700 uppercase">Grado / Sección</th>
+                      <th className="px-6 py-4 text-xs font-black text-slate-700 uppercase">Teléfono</th>
                       <th className="px-6 py-4 text-xs font-black text-slate-700 uppercase">Acciones</th>
                     </tr>
                   </thead>
@@ -952,8 +1085,14 @@ export default function App() {
                         <td className="px-6 py-4 font-mono text-sm">{s.id}</td>
                         <td className="px-6 py-4 font-bold">{s.last_name}, {s.first_name}</td>
                         <td className="px-6 py-4 font-medium text-[#24157A]">{s.grade_section}</td>
-                        <td className="px-6 py-4">
-                          <button onClick={() => handleDeleteStudent(s.id)} className="text-rose-500 hover:text-rose-700 transition-colors"><Trash2 size={18} /></button>
+                        <td className="px-6 py-4 text-sm">{s.parent_phone || '-'}</td>
+                        <td className="px-6 py-4 flex gap-3">
+                          <button onClick={() => setSelectedStudentQR(s)} className="text-[#24157A] hover:text-[#2E1A8A] transition-colors" title="Ver QR">
+                            <QrCode size={18} />
+                          </button>
+                          <button onClick={() => handleDeleteStudent(s.id)} className="text-rose-500 hover:text-rose-700 transition-colors" title="Eliminar">
+                            <Trash2 size={18} />
+                          </button>
                         </td>
                       </tr>
                     ))}
@@ -975,6 +1114,10 @@ export default function App() {
                   <button onClick={() => entityType === 'docente' ? setShowAddAbsence(true) : setShowAddStudentAbsence(true)} className="bg-[#24157A] text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 shadow-lg hover:bg-[#2E1A8A] transition-all"> 
                     <AlertCircle size={20} /> Registrar Falta
                   </button>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-tighter">Teléfono del Apoderado</label>
+                  <input type="tel" value={newStudent.parent_phone} onChange={e => setNewStudent({...newStudent, parent_phone: e.target.value})} className="w-full px-6 py-4 bg-[#F1F1F1] border-2 border-[#D9D9D9] rounded-2xl focus:border-[#24157A] outline-none" placeholder="Ej: 987654321" />
                 </div>
               </div>
               <div className="bg-white rounded-[2rem] border border-[#D9D9D9] shadow-sm overflow-hidden">
@@ -1085,6 +1228,37 @@ export default function App() {
                 <button type="submit" className="w-full bg-[#24157A] text-white py-5 rounded-2xl font-black shadow-lg hover:bg-[#2E1A8A] transition-colors" aria-label="Iniciar sesión">ENTRAR</button>
                 <button type="button" onClick={() => setShowLogin(false)} className="w-full text-slate-600 font-bold text-sm hover:text-slate-800 transition-colors" aria-label="Cancelar inicio de sesión">Cancelar</button>
               </form>
+            </motion.div>
+          </div>
+        )}
+
+        {selectedStudentQR && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setSelectedStudentQR(null)} className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+            <motion.div initial={{ scale: 0.9, opacity: 0, y: 20 }} animate={{ scale: 1, opacity: 1, y: 0 }} className="bg-white rounded-[3rem] p-12 w-full max-w-sm relative z-10 shadow-2xl text-center">
+              <button onClick={() => setSelectedStudentQR(null)} className="absolute top-8 right-8 p-2 hover:bg-gray-100 rounded-full transition-colors text-slate-400"><X size={24} /></button>
+              <div className="mb-8">
+                <div className="w-20 h-20 bg-[#59C65B] rounded-3xl flex items-center justify-center text-white mx-auto mb-6 shadow-xl shadow-[#59C65B]/20">
+                  <GraduationCap size={40} />
+                </div>
+                <h2 className="text-2xl font-black text-slate-800 leading-tight">{selectedStudentQR.first_name}<br/>{selectedStudentQR.last_name}</h2>
+                <p className="text-sm font-bold text-[#24157A] mt-2">{selectedStudentQR.grade_section}</p>
+                <p className="text-xs font-mono text-slate-400 mt-1 uppercase tracking-widest">{selectedStudentQR.id}</p>
+              </div>
+              <div className="bg-white p-6 rounded-[2.5rem] border-4 border-slate-50 inline-block mb-10 shadow-inner">
+                <QRCodeSVG id="teacher-qr-code" value={selectedStudentQR.id} size={200} level="H" includeMargin={true} />
+              </div>
+              <div className="flex flex-col gap-3">
+                <button onClick={() => window.print()} className="w-full bg-slate-100 text-slate-900 py-4 rounded-2xl font-black flex items-center justify-center gap-2 hover:bg-slate-200 transition-all shadow-sm">
+                  <Printer size={20} /> Imprimir Código
+                </button>
+                <button onClick={downloadQRCode} className="w-full bg-[#24157A] text-white py-4 rounded-2xl font-black flex items-center justify-center gap-2 hover:bg-[#2E1A8A] transition-all shadow-lg">
+                  <Download size={20} /> Descargar Imagen
+                </button>
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-4">
+                  Código de Identificación Estudiantil
+                </p>
+              </div>
             </motion.div>
           </div>
         )}

@@ -129,66 +129,73 @@ export async function registerStudent(studentData: any) {
 export async function syncOfflineData() {
   if (!navigator.onLine) return;
   
-  const pending = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
-  const pendingTeachers = JSON.parse(localStorage.getItem(TEACHERS_KEY) || '[]');
-  const pendingAbsences = JSON.parse(localStorage.getItem(ABSENCES_KEY) || '[]');
-  const pendingStudents = JSON.parse(localStorage.getItem(STUDENTS_KEY) || '[]');
-  const pendingStudentAtt = JSON.parse(localStorage.getItem(STUDENT_ATTENDANCE_KEY) || '[]');
+  // Cargamos todo lo pendiente
+  const queue = {
+    teachers: JSON.parse(localStorage.getItem(TEACHERS_KEY) || '[]'),
+    students: JSON.parse(localStorage.getItem(STUDENTS_KEY) || '[]'),
+    attendance: JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'),
+    absences: JSON.parse(localStorage.getItem(ABSENCES_KEY) || '[]'),
+    studentAtt: JSON.parse(localStorage.getItem(STUDENT_ATTENDANCE_KEY) || '[]')
+  };
 
-  if (pending.length === 0 && pendingTeachers.length === 0 && pendingAbsences.length === 0 && pendingStudents.length === 0 && pendingStudentAtt.length === 0) return;
+  if (Object.values(queue).every(arr => arr.length === 0)) return;
+  console.log("🔄 Iniciando sincronización de datos pendientes...");
 
-  // Sincronizar Asistencias
-  const attendanceResults = await Promise.allSettled(pending.map(async (item: any) => {
-    const res = await fetch('/api/attendance', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(item) });
-    if (res.ok) return item.offlineId;
-    throw new Error();
-  }));
-  const syncedAttendanceIds = attendanceResults.filter(r => r.status === 'fulfilled').map(r => (r as any).value);
-  if (syncedAttendanceIds.length > 0) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(pending.filter((i: any) => !syncedAttendanceIds.includes(i.offlineId))));
+  // 1. Sincronizar Entidades primero (Docentes y Estudiantes)
+  // Es vital subirlos antes que sus asistencias para evitar errores de clave foránea.
+  for (const t of queue.teachers) {
+    try {
+      const res = await fetch('/api/teachers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(t) });
+      if (res.ok || res.status === 400) { // 400 suele ser "ya existe"
+        queue.teachers = queue.teachers.filter((item: any) => item.id !== t.id);
+        localStorage.setItem(TEACHERS_KEY, JSON.stringify(queue.teachers));
+      }
+    } catch (e) { break; } // Si falla la red, paramos este bucle
   }
 
-  // Sincronizar Docentes
-  const teacherResults = await Promise.allSettled(pendingTeachers.map(async (teacher: any) => {
-    const res = await fetch('/api/teachers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(teacher) });
-    if (res.ok) return teacher.id;
-    throw new Error();
-  }));
-  const syncedTeacherIds = teacherResults.filter(r => r.status === 'fulfilled').map(r => (r as any).value);
-  if (syncedTeacherIds.length > 0) {
-    localStorage.setItem(TEACHERS_KEY, JSON.stringify(pendingTeachers.filter((t: any) => !syncedTeacherIds.includes(t.id))));
+  for (const s of queue.students) {
+    try {
+      const res = await fetch('/api/students', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(s) });
+      if (res.ok || res.status === 400) {
+        queue.students = queue.students.filter((item: any) => item.id !== s.id);
+        localStorage.setItem(STUDENTS_KEY, JSON.stringify(queue.students));
+      }
+    } catch (e) { break; }
   }
 
-  // Sincronizar Faltas
-  const absenceResults = await Promise.allSettled(pendingAbsences.map(async (abs: any) => {
-    const res = await fetch('/api/absences', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(abs) });
-    if (res.ok) return abs;
-    throw new Error();
-  }));
-  const syncedAbsences = absenceResults.filter(r => r.status === 'fulfilled').map(r => (r as any).value);
-  if (syncedAbsences.length > 0) {
-    const remaining = pendingAbsences.filter((a: any) => 
-      !syncedAbsences.some((s: any) => s.teacherId === a.teacherId && s.date === a.date));
-    localStorage.setItem(ABSENCES_KEY, JSON.stringify(remaining));
+  // 2. Sincronizar Eventos (Asistencias y Faltas)
+  const syncEvent = async (url: string, item: any, key: string, idField: string) => {
+    try {
+      const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(item) });
+      if (res.ok || res.status === 400) {
+        const current = JSON.parse(localStorage.getItem(key) || '[]');
+        localStorage.setItem(key, JSON.stringify(current.filter((i: any) => i[idField] !== item[idField])));
+        return true;
+      }
+    } catch (e) { return false; }
+    return false;
+  };
+
+  for (const att of queue.attendance) {
+    if (!(await syncEvent('/api/attendance', att, STORAGE_KEY, 'offlineId'))) break;
   }
 
-  // Sincronizar Estudiantes
-  for (const student of pendingStudents) {
-    const res = await fetch('/api/students', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(student) });
-    if (res.ok) {
-      const current = JSON.parse(localStorage.getItem(STUDENTS_KEY) || '[]');
-      localStorage.setItem(STUDENTS_KEY, JSON.stringify(current.filter((s: any) => s.id !== student.id)));
-    }
+  for (const abs of queue.absences) {
+    // Para faltas no tenemos un offlineId único, usamos combinación de id y fecha
+    try {
+      const res = await fetch('/api/absences', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(abs) });
+      if (res.ok || res.status === 400) {
+        const current = JSON.parse(localStorage.getItem(ABSENCES_KEY) || '[]');
+        localStorage.setItem(ABSENCES_KEY, JSON.stringify(current.filter((i: any) => !(i.teacherId === abs.teacherId && i.date === abs.date))));
+      }
+    } catch (e) { break; }
   }
 
-  // Sincronizar Asistencia Estudiantes
-  for (const att of pendingStudentAtt) {
-    const res = await fetch('/api/student-attendance', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(att) });
-    if (res.ok) {
-      const current = JSON.parse(localStorage.getItem(STUDENT_ATTENDANCE_KEY) || '[]');
-      localStorage.setItem(STUDENT_ATTENDANCE_KEY, JSON.stringify(current.filter((s: any) => s.offlineId !== att.offlineId)));
-    }
+  for (const sAtt of queue.studentAtt) {
+    if (!(await syncEvent('/api/student-attendance', sAtt, STUDENT_ATTENDANCE_KEY, 'offlineId'))) break;
   }
+
+  console.log("✅ Sincronización finalizada.");
 }
 
 // Sincronizar automáticamente cuando el navegador detecta internet
