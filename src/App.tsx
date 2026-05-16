@@ -374,11 +374,10 @@ export default function App() {
         fetch(`/api/report?t=${timestamp}`),
         fetch(`/api/absences?t=${timestamp}`),
         fetch(`/api/health?t=${timestamp}`),
-        fetch(`/api/admins?t=${timestamp}`),
-        fetch(`/api/admins?t=${timestamp}`),
-        fetch(`/api/students?t=${timestamp}`),
-        fetch(`/api/student-report?t=${timestamp}`),
-        fetch(`/api/student-absences?t=${timestamp}`)
+        fetch(`/api/admins?t=${timestamp}`),         // 4
+        fetch(`/api/students?t=${timestamp}`),       // 5
+        fetch(`/api/student-report?t=${timestamp}`), // 6
+        fetch(`/api/student-absences?t=${timestamp}`) // 7
       ]);
 
       const safeJson = async (resPromise: any) => {
@@ -397,14 +396,22 @@ export default function App() {
         }
       }
 
-      const [tData, rData, aData, admData, sData] = await Promise.all([
-        safeJson(responses[0]), safeJson(responses[1]), safeJson(responses[2]), safeJson(responses[4]), safeJson(responses[5])
+      const [tData, rData, aData, admData, sData, srData, saData] = await Promise.all([
+        safeJson(responses[0]), 
+        safeJson(responses[1]), 
+        safeJson(responses[2]), 
+        safeJson(responses[4]), 
+        safeJson(responses[5]), 
+        safeJson(responses[6]), 
+        safeJson(responses[7])
       ]);
 
       if (Array.isArray(tData)) { setTeachers(tData); localStorage.setItem('cache_teachers', JSON.stringify(tData)); }
       if (Array.isArray(sData)) { setStudents(sData); localStorage.setItem('cache_students', JSON.stringify(sData)); }
       if (Array.isArray(rData)) { setRecords(rData); localStorage.setItem('cache_records', JSON.stringify(rData)); }
+      if (Array.isArray(srData)) { setStudentRecords(srData); }
       if (Array.isArray(aData)) { setAbsences(aData); localStorage.setItem('cache_absences', JSON.stringify(aData)); }
+      if (Array.isArray(saData)) { setStudentAbsences(saData); }
       if (Array.isArray(admData)) { 
         setAdmins(admData); 
         localStorage.setItem('cache_admins', JSON.stringify(admData)); 
@@ -431,35 +438,41 @@ export default function App() {
   const downloadExcel = async () => {
     const loading = toast.loading('Generando reporte Excel...');
     try {
-      const safeRecords = Array.isArray(combinedRecords) ? combinedRecords : [];
-      const safeAbsences = Array.isArray(combinedAbsences) ? combinedAbsences : [];
+      // Elegir qué datos exportar según la pestaña activa o el tipo de entidad seleccionado
+      const isDocente = entityType === 'docente';
+      const recordsToExport = isDocente ? combinedRecords : studentRecords;
+      const absencesToExport = isDocente ? combinedAbsences : studentAbsences;
+
+      const safeRecords = Array.isArray(recordsToExport) ? recordsToExport : [];
+      const safeAbsences = Array.isArray(absencesToExport) ? absencesToExport : [];
 
       const data = [
         ...safeRecords.map((r: any) => ({
-          'Tipo': 'ASISTENCIA', 
-          'Docente': (r.teacher_name || 'DESCONOCIDO').toUpperCase(), 
-          'DNI': r.teacher_id || '-', 
-          'Estado': r.type === 'ENTRADA' ? (r.status === 'TARDE' ? 'TARDE' : 'ASISTIÓ') : (r.type || 'S/D'), 
+          'Categoría': isDocente ? 'DOCENTE' : 'ESTUDIANTE',
+          'Tipo': 'ASISTENCIA',
+          'Nombre': (r.teacher_name || r.student_name || 'DESCONOCIDO').toUpperCase(), 
+          'ID/DNI': r.teacher_id || r.student_id || '-', 
+          'Evento': r.type || 'S/D',
           'Fecha': r.date || '-', 
           'Hora': r.time || '-', 
-          'Detalle': r.status || 'PUNTUAL'
+          'Estado': r.status || 'PUNTUAL'
         })),
         ...safeAbsences.map((a: any) => ({
-          'Tipo': 'FALTA', 
-          'Docente': a.teacher_name || 'Desconocido', 
-          'DNI': a.teacher_id || '-', 
-          'Estado': 'FALTA', 
+          'Categoría': isDocente ? 'DOCENTE' : 'ESTUDIANTE',
+          'Tipo': 'FALTA',
+          'Nombre': (a.teacher_name || a.student_name || 'Desconocido').toUpperCase(), 
+          'ID/DNI': a.teacher_id || a.student_id || '-', 
+          'Evento': a.status || 'INJUSTIFICADA',
           'Fecha': a.date || '-', 
           'Hora': '-', 
-          'Detalle': a.reason || 'Sin motivo',
-          'Sincronización': a.offline ? 'PENDIENTE' : 'OK'
+          'Motivo': a.reason || 'Sin motivo'
         }))
       ].sort((a, b) => String(b.Fecha).localeCompare(String(a.Fecha)));
 
       const ws = XLSX.utils.json_to_sheet(data);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Reporte");
-      XLSX.writeFile(wb, `Reporte_Asistencia_${reportMonth || 'General'}.xlsx`);
+      XLSX.writeFile(wb, `Reporte_${isDocente ? 'Docentes' : 'Estudiantes'}_${reportMonth}.xlsx`);
       toast.success('Excel descargado', { id: loading });
     } catch (error) {
       toast.error('Error al generar Excel', { id: loading });
@@ -976,13 +989,13 @@ export default function App() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
-                    {(entityType === 'docente' ? combinedAbsences : studentAbsences).filter(a => reportMonth ? a.date.startsWith(reportMonth) : true).map((a: any, i: number) => (
+                    {(entityType === 'docente' ? combinedAbsences : studentAbsences).filter((a: any) => a && a.date && (reportMonth ? a.date.startsWith(reportMonth) : true)).map((a: any, i: number) => (
                       <tr key={i} className="hover:bg-gray-50/50">
                         <td className="px-6 py-4 font-bold">{entityType === 'docente' ? a.teacher_name : a.student_name}</td>
                         <td className="px-6 py-4 text-sm">{a.date}</td>
                         <td className="px-6 py-4">
-                          <span className={`px-3 py-1 rounded-full text-[10px] font-black ${a.status.includes('JUSTIFICADA') ? 'bg-blue-100 text-blue-700' : 'bg-rose-100 text-rose-700'}`}>
-                            {a.status}
+                          <span className={`px-3 py-1 rounded-full text-[10px] font-black ${(a.status || '').includes('JUSTIFICADA') ? 'bg-blue-100 text-blue-700' : 'bg-rose-100 text-rose-700'}`}>
+                            {a.status || 'INJUSTIFICADA'}
                           </span>
                         </td>
                         <td className="px-6 py-4 text-xs text-slate-700 max-w-[200px] truncate">{a.reason || 'Sin motivo'}</td>
@@ -1028,12 +1041,12 @@ export default function App() {
                 <table className="w-full text-left border-collapse">
                   <thead><tr className="bg-[#F1F1F1]"><th className="px-6 py-4 text-xs font-black text-gray-600 uppercase">Nombre</th><th className="px-6 py-4 text-xs font-black text-gray-600 uppercase">Evento</th><th className="px-6 py-4 text-xs font-black text-gray-600 uppercase">Hora</th><th className="px-6 py-4 text-xs font-black text-gray-600 uppercase">Estado</th></tr></thead>
                   <tbody className="divide-y divide-gray-50">
-                    {(entityType === 'docente' ? combinedRecords : studentRecords).filter(r => reportMonth ? r.date.startsWith(reportMonth) : true).map((r: any, i: number) => (
+                    {(entityType === 'docente' ? combinedRecords : studentRecords).filter((r: any) => r && r.date && (reportMonth ? r.date.startsWith(reportMonth) : true)).map((r: any, i: number) => (
                       <tr key={i} className="hover:bg-gray-50/50 transition-colors">
                         <td className="px-6 py-4"><div className="font-black text-slate-800 uppercase text-sm">{entityType === 'docente' ? r.teacher_name : r.student_name}</div><div className="text-[10px] font-mono text-slate-600">ID: {entityType === 'docente' ? r.teacher_id : r.student_id}</div></td>
                         <td className="px-6 py-4">
-                          <span className={`px-3 py-1 rounded-lg text-[10px] font-black border ${r.type === 'ENTRADA' ? (entityType === 'docente' && r.status === 'TARDE' ? 'bg-rose-50 text-rose-700' : 'bg-[#F1F1F1] text-[#59C65B]') : 'bg-blue-50 text-[#24157A]'}`}>
-                            {r.type === 'ENTRADA' ? (entityType === 'docente' && r.status === 'TARDE' ? 'TARDE' : 'ASISTIÓ') : r.type}
+                          <span className={`px-3 py-1 rounded-lg text-[10px] font-black border ${r.type === 'ENTRADA' ? (r.status === 'TARDE' ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-[#F1F1F1] text-[#59C65B] border-[#59C65B]') : 'bg-blue-50 text-[#24157A] border-[#24157A]'}`}>
+                            {r.type === 'ENTRADA' ? (r.status === 'TARDE' ? 'TARDE' : 'ASISTIÓ') : r.type}
                           </span>
                         </td>
                         <td className="px-6 py-4 text-sm text-slate-700">{r.date} {r.time}</td>
