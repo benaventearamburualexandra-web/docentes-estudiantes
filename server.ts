@@ -68,10 +68,12 @@ if (isRender) {
 
 // Initialize Database
 async function initDb() {
-    if (isRender) return; // Supabase ya tiene el esquema, solo inicializamos local
     try {
-      console.log(`🔍 Inicializando base de datos local en: ${dbPath}`);
+      console.log(`🔍 Inicializando esquema de base de datos (${isRender ? 'Supabase' : 'SQLite'})...`);
       
+      // En Postgres usamos SERIAL, en SQLite usamos AUTOINCREMENT
+      const idType = isRender ? 'SERIAL PRIMARY KEY' : 'INTEGER PRIMARY KEY AUTOINCREMENT';
+
       const schema = `
         CREATE TABLE IF NOT EXISTS teachers (
           id TEXT PRIMARY KEY,
@@ -83,7 +85,7 @@ async function initDb() {
         );
         
         CREATE TABLE IF NOT EXISTS attendance (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          id ${idType},
           teacher_id TEXT REFERENCES teachers(id) ON DELETE CASCADE,
           type TEXT,
           date TEXT,
@@ -92,7 +94,7 @@ async function initDb() {
         );
   
         CREATE TABLE IF NOT EXISTS absences (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          id ${idType},
           teacher_id TEXT REFERENCES teachers(id) ON DELETE CASCADE,
           date TEXT,
           status TEXT,
@@ -113,7 +115,7 @@ async function initDb() {
         );
 
         CREATE TABLE IF NOT EXISTS student_attendance (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          id ${idType},
           student_id TEXT REFERENCES students(id) ON DELETE CASCADE,
           type TEXT,
           date TEXT,
