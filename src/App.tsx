@@ -397,13 +397,13 @@ export default function App() {
       }
 
       const [tData, rData, aData, admData, sData, srData, saData] = await Promise.all([
-        safeJson(responses[0]), 
-        safeJson(responses[1]), 
-        safeJson(responses[2]), 
-        safeJson(responses[4]), 
-        safeJson(responses[5]), 
-        safeJson(responses[6]), 
-        safeJson(responses[7])
+        safeJson(responses[0]), // Teachers
+        safeJson(responses[1]), // Reports (Attendance)
+        safeJson(responses[2]), // Absences
+        safeJson(responses[4]), // Admins
+        safeJson(responses[5]), // Students
+        safeJson(responses[6]), // Student Reports
+        safeJson(responses[7])  // Student Absences
       ]);
 
       if (Array.isArray(tData)) { setTeachers(tData); localStorage.setItem('cache_teachers', JSON.stringify(tData)); }
@@ -994,7 +994,7 @@ export default function App() {
                         <td className="px-6 py-4 font-bold">{entityType === 'docente' ? a.teacher_name : a.student_name}</td>
                         <td className="px-6 py-4 text-sm">{a.date}</td>
                         <td className="px-6 py-4">
-                          <span className={`px-3 py-1 rounded-full text-[10px] font-black ${(a.status || '').includes('JUSTIFICADA') ? 'bg-blue-100 text-blue-700' : 'bg-rose-100 text-rose-700'}`}>
+                          <span className={`px-3 py-1 rounded-full text-[10px] font-black ${(a.status || 'INJUSTIFICADA').includes('JUSTIFICADA') ? 'bg-blue-100 text-blue-700' : 'bg-rose-100 text-rose-700'}`}>
                             {a.status || 'INJUSTIFICADA'}
                           </span>
                         </td>
@@ -1041,7 +1041,7 @@ export default function App() {
                 <table className="w-full text-left border-collapse">
                   <thead><tr className="bg-[#F1F1F1]"><th className="px-6 py-4 text-xs font-black text-gray-600 uppercase">Nombre</th><th className="px-6 py-4 text-xs font-black text-gray-600 uppercase">Evento</th><th className="px-6 py-4 text-xs font-black text-gray-600 uppercase">Hora</th><th className="px-6 py-4 text-xs font-black text-gray-600 uppercase">Estado</th></tr></thead>
                   <tbody className="divide-y divide-gray-50">
-                    {(entityType === 'docente' ? combinedRecords : studentRecords).filter((r: any) => r && r.date && (reportMonth ? r.date.startsWith(reportMonth) : true)).map((r: any, i: number) => (
+                    {(entityType === 'docente' ? combinedRecords : (studentRecords || [])).filter((r: any) => r && r.date && (reportMonth ? r.date.startsWith(reportMonth) : true)).map((r: any, i: number) => (
                       <tr key={i} className="hover:bg-gray-50/50 transition-colors">
                         <td className="px-6 py-4"><div className="font-black text-slate-800 uppercase text-sm">{entityType === 'docente' ? r.teacher_name : r.student_name}</div><div className="text-[10px] font-mono text-slate-600">ID: {entityType === 'docente' ? r.teacher_id : r.student_id}</div></td>
                         <td className="px-6 py-4">
