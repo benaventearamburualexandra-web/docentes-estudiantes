@@ -34,6 +34,7 @@ interface Student {
   first_name: string;
   last_name: string;
   grade_section: string;
+  schedule?: Record<string, { enabled: boolean; start?: string; end?: string; slots?: { start: string, end: string }[] }>;
 }
 
 interface AttendanceRecord {
@@ -111,15 +112,19 @@ export default function App() {
 
   const [showLogin, setShowLogin] = useState(false);
   const [showAddTeacher, setShowAddTeacher] = useState(false);
+  const [showAddStudentAbsence, setShowAddStudentAbsence] = useState(false);
   const [showEditTeacher, setShowEditTeacher] = useState(false);
   const [showAddAbsence, setShowAddAbsence] = useState(false);
   const [showAddStudent, setShowAddStudent] = useState(false);
   const [loginUsername, setLoginUsername] = useState('admin');
   const [password, setPassword] = useState('');
   const [newTeacher, setNewTeacher] = useState({ id: '', first_name: '', last_name: '', specialty: '', photo_url: '', schedule: INITIAL_SCHEDULE });
-  const [newStudent, setNewStudent] = useState({ id: '', first_name: '', last_name: '', grade_section: '' });
+  const [newStudent, setNewStudent] = useState({ id: '', first_name: '', last_name: '', grade_section: '', schedule: INITIAL_SCHEDULE });
+  const [studentRecords, setStudentRecords] = useState<any[]>([]);
+  const [studentAbsences, setStudentAbsences] = useState<any[]>([]);
   const [editingTeacher, setEditingTeacher] = useState<Teacher | null>(null);
   const [newAbsence, setNewAbsence] = useState({ teacherId: '', date: new Date().toISOString().split('T')[0], status: 'INJUSTIFICADA', reason: '' });
+  const [newStudentAbsence, setNewStudentAbsence] = useState({ studentId: '', date: new Date().toISOString().split('T')[0], status: 'INJUSTIFICADA', reason: '' });
   const [selectedTeacherQR, setSelectedTeacherQR] = useState<Teacher | null>(null);
   const [reportMonth, setReportMonth] = useState(new Date().toISOString().slice(0, 7));
   const [reportWeek, setReportWeek] = useState('');
@@ -370,7 +375,10 @@ export default function App() {
         fetch(`/api/absences?t=${timestamp}`),
         fetch(`/api/health?t=${timestamp}`),
         fetch(`/api/admins?t=${timestamp}`),
-        fetch(`/api/students?t=${timestamp}`)
+        fetch(`/api/admins?t=${timestamp}`),
+        fetch(`/api/students?t=${timestamp}`),
+        fetch(`/api/student-report?t=${timestamp}`),
+        fetch(`/api/student-absences?t=${timestamp}`)
       ]);
 
       const safeJson = async (resPromise: any) => {
@@ -615,15 +623,34 @@ export default function App() {
   };
 
   const handleStudentAttendance = async (id: string) => {
-    if (isSubmitting || !id) return;
+    const sid = id.trim();
+    if (isSubmitting || !sid) return;
     setIsSubmitting(true);
-    const loading = toast.loading(`Registrando ${attendanceTypeRef.current} de Estudiante...`);
+
+    // Calcular tardanza del estudiante localmente
+    let calculatedStatus = 'PUNTUAL';
+    if (attendanceTypeRef.current === 'ENTRADA') {
+      const student = students.find(s => s.id === sid);
+      if (student?.schedule) {
+        const now = new Date();
+        const dayName = new Intl.DateTimeFormat('en-US', { weekday: 'long', timeZone: 'America/Lima' }).format(now).toLowerCase();
+        const daySched = student.schedule[dayName];
+        if (daySched?.enabled) {
+          const timeStr = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/Lima' }).format(now);
+          let startStr = daySched.slots?.[0]?.start || daySched.start;
+          if (startStr && timeStr > startStr) calculatedStatus = 'TARDE';
+        }
+      }
+    }
+
+    const loading = toast.loading(`Registrando ${attendanceTypeRef.current}...`);
     try {
-      const data = await registerStudentAttendance(id, attendanceTypeRef.current);
+      const data = await registerStudentAttendance(sid, attendanceTypeRef.current);
       if (data.success) {
-        toast.success(`${data.studentName || 'Estudiante'}: ${attendanceTypeRef.current}`, { id: loading });
+        toast.success(`${data.studentName || 'Estudiante'}: ${attendanceTypeRef.current} ${calculatedStatus}`, { id: loading });
         setTeacherId('');
         setOfflineTrigger(prev => prev + 1);
+        fetchData();
       } else throw new Error(data.error);
     } catch (error: any) { toast.error(error.message || 'Error', { id: loading }); }
     finally { setIsSubmitting(false); }
@@ -683,11 +710,28 @@ export default function App() {
       const data = await registerStudent(newStudent);
       if (data.success) {
         toast.success(data.offline ? 'Guardado Offline' : 'Estudiante registrado', { id: loading });
-        setNewStudent({ id: '', first_name: '', last_name: '', grade_section: '' });
+        setNewStudent({ id: '', first_name: '', last_name: '', grade_section: '', schedule: INITIAL_SCHEDULE });
         setShowAddStudent(false);
         fetchData();
       }
     } catch (e) { toast.error('Error', { id: loading }); }
+  };
+
+  const onAddStudentAbsence = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const loading = toast.loading('Registrando falta...');
+    try {
+      const res = await fetch('/api/student-absences', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newStudentAbsence),
+      });
+      if (res.ok) {
+        toast.success('Falta registrada', { id: loading });
+        setShowAddStudentAbsence(false);
+        fetchData();
+      }
+    } catch (e) { toast.error('Error al conectar'); }
   };
 
   const onAddAbsence = async (e: React.FormEvent) => {
@@ -910,15 +954,21 @@ export default function App() {
             <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-8">
               <div className="flex items-center justify-between">
                 <h2 className="text-3xl font-black text-white">Inasistencias</h2>
-                <button onClick={() => setShowAddAbsence(true)} className="bg-[#24157A] text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 shadow-lg hover:bg-[#2E1A8A] transition-all" aria-label="Registrar nueva falta"> 
-                  <AlertCircle size={20} /> Registrar Falta
-                </button>
+                <div className="flex gap-2">
+                  <div className="bg-white/20 backdrop-blur-md p-1 rounded-2xl border border-white/30 flex shadow-sm">
+                    <button onClick={() => setEntityType('docente')} className={`px-4 py-2 rounded-xl text-xs font-black transition-all ${entityType === 'docente' ? 'bg-white text-[#24157A]' : 'text-white'}`}>DOCENTES</button>
+                    <button onClick={() => setEntityType('estudiante')} className={`px-4 py-2 rounded-xl text-xs font-black transition-all ${entityType === 'estudiante' ? 'bg-white text-[#24157A]' : 'text-white'}`}>ESTUDIANTES</button>
+                  </div>
+                  <button onClick={() => entityType === 'docente' ? setShowAddAbsence(true) : setShowAddStudentAbsence(true)} className="bg-[#24157A] text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 shadow-lg hover:bg-[#2E1A8A] transition-all"> 
+                    <AlertCircle size={20} /> Registrar Falta
+                  </button>
+                </div>
               </div>
-              <div className="bg-white rounded-[2rem] border border-gray-100 shadow-sm overflow-hidden">
+              <div className="bg-white rounded-[2rem] border border-[#D9D9D9] shadow-sm overflow-hidden">
                 <table className="w-full text-left">
                   <thead>
-                    <tr className="bg-gray-50 border-b border-gray-100">
-                      <th className="px-6 py-4 text-xs font-bold text-slate-700 uppercase">Docente</th>
+                    <tr className="bg-[#F1F1F1] border-b border-[#D9D9D9]">
+                      <th className="px-6 py-4 text-xs font-black text-slate-700 uppercase">{entityType === 'docente' ? 'Docente' : 'Estudiante'}</th>
                       <th className="px-6 py-4 text-xs font-bold text-slate-700 uppercase">Fecha</th>
                       <th className="px-6 py-4 text-xs font-bold text-slate-700 uppercase">Estado</th>
                       <th className="px-6 py-4 text-xs font-bold text-slate-700 uppercase">Motivo</th>
@@ -926,12 +976,12 @@ export default function App() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
-                    {Array.isArray(combinedAbsences) && combinedAbsences.map((a, i) => (
+                    {(entityType === 'docente' ? combinedAbsences : studentAbsences).filter(a => reportMonth ? a.date.startsWith(reportMonth) : true).map((a: any, i: number) => (
                       <tr key={i} className="hover:bg-gray-50/50">
-                        <td className="px-6 py-4 font-bold">{a.teacher_name}</td>
+                        <td className="px-6 py-4 font-bold">{entityType === 'docente' ? a.teacher_name : a.student_name}</td>
                         <td className="px-6 py-4 text-sm">{a.date}</td>
                         <td className="px-6 py-4">
-                          <span className={`px-3 py-1 rounded-full text-[10px] font-black ${String(a.status).includes('JUSTIFICADA') ? 'bg-blue-100 text-blue-700' : 'bg-rose-100 text-rose-700'}`}>
+                          <span className={`px-3 py-1 rounded-full text-[10px] font-black ${a.status.includes('JUSTIFICADA') ? 'bg-blue-100 text-blue-700' : 'bg-rose-100 text-rose-700'}`}>
                             {a.status}
                           </span>
                         </td>
@@ -952,19 +1002,19 @@ export default function App() {
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
                   <h2 className="text-3xl font-black text-white">Reportes</h2>
-                  <p className="text-white/80 font-medium text-sm">Asistencia mensual unificada</p>
+                  <p className="text-white/80 font-medium text-sm">Consulta de registros mensuales</p>
                 </div>
-                <div className="flex items-center gap-3 bg-white/10 p-3 rounded-3xl backdrop-blur-md border border-white/20">
+                <div className="flex flex-wrap items-center gap-3 bg-white/10 p-3 rounded-3xl backdrop-blur-md border border-white/20">
+                  <div className="bg-white/20 p-1 rounded-2xl border border-white/30 flex">
+                    <button onClick={() => setEntityType('docente')} className={`px-4 py-2 rounded-xl text-xs font-black transition-all ${entityType === 'docente' ? 'bg-white text-[#24157A]' : 'text-white'}`}>DOCENTE</button>
+                    <button onClick={() => setEntityType('estudiante')} className={`px-4 py-2 rounded-xl text-xs font-black transition-all ${entityType === 'estudiante' ? 'bg-white text-[#24157A]' : 'text-white'}`}>ESTUDIANTE</button>
+                  </div>
                   <div className="flex flex-col">
-                    <label htmlFor="report-month-select" className="text-[10px] font-bold text-white uppercase ml-1 mb-1">Seleccionar Mes</label>
+                    <label className="text-[10px] font-bold text-white uppercase ml-1 mb-1">Mes</label>
                     <input 
-                      id="report-month-select"
                       type="month" 
                       value={reportMonth} 
-                      onChange={(e) => {
-                        setReportMonth(e.target.value);
-                        setReportWeek(''); // Limpiar semana si se selecciona mes
-                      }}
+                      onChange={(e) => setReportMonth(e.target.value)}
                       className="bg-white border border-[#D9D9D9] px-4 py-2 rounded-xl text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-[#24157A] shadow-sm"
                     />
                   </div>
@@ -978,23 +1028,25 @@ export default function App() {
                 <table className="w-full text-left border-collapse">
                   <thead><tr className="bg-[#F1F1F1]"><th className="px-6 py-4 text-xs font-black text-gray-600 uppercase">Nombre</th><th className="px-6 py-4 text-xs font-black text-gray-600 uppercase">Evento</th><th className="px-6 py-4 text-xs font-black text-gray-600 uppercase">Hora</th><th className="px-6 py-4 text-xs font-black text-gray-600 uppercase">Estado</th></tr></thead>
                   <tbody className="divide-y divide-gray-50">
-                    {Array.isArray(combinedRecords) && combinedRecords.map((r, i) => (
+                    {(entityType === 'docente' ? combinedRecords : studentRecords).filter(r => reportMonth ? r.date.startsWith(reportMonth) : true).map((r: any, i: number) => (
                       <tr key={i} className="hover:bg-gray-50/50 transition-colors">
-                        <td className="px-6 py-4"><div className="font-black text-slate-800 uppercase text-sm">{r.teacher_name}</div><div className="text-[10px] font-mono text-slate-600">ID: {r.teacher_id}</div></td>
+                        <td className="px-6 py-4"><div className="font-black text-slate-800 uppercase text-sm">{entityType === 'docente' ? r.teacher_name : r.student_name}</div><div className="text-[10px] font-mono text-slate-600">ID: {entityType === 'docente' ? r.teacher_id : r.student_id}</div></td>
                         <td className="px-6 py-4">
-                          <span className={`px-3 py-1 rounded-lg text-[10px] font-black border ${r.type === 'ENTRADA' ? (r.status === 'TARDE' ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-[#F1F1F1] text-[#59C65B] border-[#59C65B]') : 'bg-blue-50 text-[#24157A] border-[#24157A]'}`} aria-label={`Evento: ${r.type === 'ENTRADA' ? (r.status === 'TARDE' ? 'Tarde' : 'Asistió') : r.type}`}>
-                            {r.type === 'ENTRADA' ? (r.status === 'TARDE' ? 'TARDE' : 'ASISTIÓ') : r.type}
+                          <span className={`px-3 py-1 rounded-lg text-[10px] font-black border ${r.type === 'ENTRADA' ? (entityType === 'docente' && r.status === 'TARDE' ? 'bg-rose-50 text-rose-700' : 'bg-[#F1F1F1] text-[#59C65B]') : 'bg-blue-50 text-[#24157A]'}`}>
+                            {r.type === 'ENTRADA' ? (entityType === 'docente' && r.status === 'TARDE' ? 'TARDE' : 'ASISTIÓ') : r.type}
                           </span>
                         </td>
                         <td className="px-6 py-4 text-sm text-slate-700">{r.date} {r.time}</td>
                         <td className="px-6 py-4">
-                          {r.status === 'PENDIENTE' ? (
-                            <span className="bg-[#F4CD18] text-[#24157A] px-2 py-1 rounded font-bold text-[10px] animate-pulse" aria-label="Estado: Pendiente de sincronizar">SIN SUBIR</span>
-                          ) : r.status === 'TARDE' ? (
-                            <span className="bg-rose-100 text-rose-700 px-2 py-1 rounded font-bold text-[10px]" aria-label="Estado: Tarde">⚠️ TARDE</span>
-                          ) : (
-                            <span className="text-[#59C65B] font-black text-[10px]" aria-label="Estado: Puntual">✓ PUNTUAL</span>
-                          )}
+                          {entityType === 'docente' ? (
+                            r.status === 'PENDIENTE' ? (
+                              <span className="bg-[#F4CD18] text-[#24157A] px-2 py-1 rounded font-bold text-[10px] animate-pulse">SIN SUBIR</span>
+                            ) : r.status === 'TARDE' ? (
+                              <span className="bg-rose-100 text-rose-700 px-2 py-1 rounded font-bold text-[10px]">⚠️ TARDE</span>
+                            ) : (
+                              <span className="text-[#59C65B] font-black text-[10px]">✓ PUNTUAL</span>
+                            )
+                          ) : <span className="text-[#59C65B] font-black text-[10px]">✓ PRESENTE</span>}
                         </td>
                       </tr>
                     ))}
@@ -1067,29 +1119,57 @@ export default function App() {
       {/* Modal Nuevo Estudiante */}
       <AnimatePresence>
         {showAddStudent && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-white rounded-[2.5rem] p-10 w-full max-w-md shadow-2xl relative">
-              <button onClick={() => setShowAddStudent(false)} className="absolute top-6 right-6 p-2 hover:bg-gray-100 rounded-full"><X size={20} /></button>
-              <h2 className="text-2xl font-extrabold mb-6">Nuevo Estudiante</h2>
-              <form onSubmit={onAddStudent} className="space-y-4">
+          <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-white rounded-[2.5rem] p-10 w-full max-w-md shadow-2xl relative max-h-[90vh] overflow-y-auto custom-scrollbar">
+              <button onClick={() => setShowAddStudent(false)} className="absolute top-6 right-6 p-2 hover:bg-gray-100 rounded-full"><X size={24} /></button>
+              <h2 className="text-2xl font-extrabold mb-6">Registro de Estudiante</h2>
+              <form onSubmit={onAddStudent} className="space-y-5">
                 <div className="space-y-1">
                   <label className="text-[10px] font-black text-slate-500 uppercase tracking-tighter">DNI / Código Estudiante</label>
-                  <input type="text" required value={newStudent.id} onChange={e => setNewStudent({...newStudent, id: e.target.value})} className="w-full px-6 py-4 bg-[#F1F1F1] border-2 border-[#D9D9D9] rounded-2xl focus:border-[#24157A] outline-none font-mono" />
+                  <input type="text" required value={newStudent.id} onChange={e => setNewStudent({...newStudent, id: e.target.value.replace(/\D/g, '')})} className="w-full px-6 py-4 bg-[#F1F1F1] border-2 border-[#D9D9D9] rounded-2xl focus:border-[#24157A] outline-none font-mono" />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
                     <label className="text-[10px] font-black text-slate-500 uppercase tracking-tighter">Nombres</label>
-                    <input type="text" required value={newStudent.first_name} onChange={e => setNewStudent({...newStudent, first_name: e.target.value})} className="w-full px-6 py-3 bg-[#F1F1F1] border-2 border-[#D9D9D9] rounded-2xl focus:border-[#24157A] outline-none" />
+                    <input type="text" required value={newStudent.first_name} onChange={e => setNewStudent({...newStudent, first_name: e.target.value})} className="w-full px-6 py-4 bg-[#F1F1F1] border-2 border-[#D9D9D9] rounded-2xl focus:border-[#24157A] outline-none" />
                   </div>
                   <div className="space-y-1">
                     <label className="text-[10px] font-black text-slate-500 uppercase tracking-tighter">Apellidos</label>
-                    <input type="text" required value={newStudent.last_name} onChange={e => setNewStudent({...newStudent, last_name: e.target.value})} className="w-full px-6 py-3 bg-[#F1F1F1] border-2 border-[#D9D9D9] rounded-2xl focus:border-[#24157A] outline-none" />
+                    <input type="text" required value={newStudent.last_name} onChange={e => setNewStudent({...newStudent, last_name: e.target.value})} className="w-full px-6 py-4 bg-[#F1F1F1] border-2 border-[#D9D9D9] rounded-2xl focus:border-[#24157A] outline-none" />
                   </div>
                 </div>
                 <div className="space-y-1">
                   <label className="text-[10px] font-black text-slate-500 uppercase tracking-tighter">Grado y Sección</label>
                   <input type="text" required value={newStudent.grade_section} onChange={e => setNewStudent({...newStudent, grade_section: e.target.value})} className="w-full px-6 py-4 bg-[#F1F1F1] border-2 border-[#D9D9D9] rounded-2xl focus:border-[#24157A] outline-none" placeholder="Ej: 5to Secundaria 'A'" />
                 </div>
+
+                {/* Horario para Estudiantes */}
+                <div className="space-y-4 bg-[#F1F1F1] p-5 rounded-3xl border border-[#D9D9D9]">
+                  <label className="text-[10px] font-black text-[#24157A] uppercase block">Horario de Ingreso y Salida</label>
+                  {Object.entries(newStudent.schedule).map(([day, data]: [string, any]) => (
+                    <div key={day} className="bg-white p-3 rounded-2xl border border-gray-100 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input type="checkbox" checked={data.enabled} onChange={e => setNewStudent({ ...newStudent, schedule: { ...newStudent.schedule, [day]: { ...data, enabled: e.target.checked } } })} className="w-4 h-4 rounded text-[#24157A]" />
+                          <span className="font-bold text-slate-700 text-xs">{DAY_LABELS[day]}</span>
+                        </label>
+                      </div>
+                      {data.enabled && (data.slots || []).map((slot: any, idx: number) => (
+                        <div key={idx} className="flex gap-2">
+                          <input type="time" value={slot.start} onChange={e => {
+                            const newSlots = [...data.slots]; newSlots[idx].start = e.target.value;
+                            setNewStudent({ ...newStudent, schedule: { ...newStudent.schedule, [day]: { ...data, slots: newSlots } } });
+                          }} className="flex-1 text-[10px] p-2 bg-slate-50 rounded-lg border-none" />
+                          <input type="time" value={slot.end} onChange={e => {
+                            const newSlots = [...data.slots]; newSlots[idx].end = e.target.value;
+                            setNewStudent({ ...newStudent, schedule: { ...newStudent.schedule, [day]: { ...data, slots: newSlots } } });
+                          }} className="flex-1 text-[10px] p-2 bg-slate-50 rounded-lg border-none" />
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+
                 <button type="submit" className="w-full bg-[#59C65B] text-white py-5 rounded-2xl font-black shadow-lg hover:bg-[#6EDB63] transition-all">REGISTRAR ESTUDIANTE</button>
               </form>
             </motion.div>
@@ -1274,6 +1354,45 @@ export default function App() {
                   Este código es personal e intransferible
                 </p>
               </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Modal Registrar Falta Estudiante */}
+      <AnimatePresence>
+        {showAddStudentAbsence && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-white rounded-[2.5rem] p-10 w-full max-w-md shadow-2xl relative">
+              <button onClick={() => setShowAddStudentAbsence(false)} className="absolute top-6 right-6 p-2 hover:bg-gray-100 rounded-full"><X size={20} /></button>
+              <h2 className="text-2xl font-extrabold mb-6">Registrar Falta Estudiante</h2>
+              <form onSubmit={onAddStudentAbsence} className="space-y-6">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-700 uppercase">Estudiante</label>
+                  <select required value={newStudentAbsence.studentId} onChange={e => setNewStudentAbsence({...newStudentAbsence, studentId: e.target.value})} className="w-full px-6 py-4 bg-[#F1F1F1] border-2 border-[#D9D9D9] rounded-2xl outline-none focus:border-[#24157A]">
+                    <option value="">Seleccionar...</option>
+                    {students.map(s => <option key={s.id} value={s.id}>{s.last_name}, {s.first_name}</option>)}
+                  </select>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-slate-700 uppercase">Fecha</label>
+                    <input type="date" required value={newStudentAbsence.date} onChange={e => setNewStudentAbsence({...newStudentAbsence, date: e.target.value})} className="w-full px-6 py-4 bg-[#F1F1F1] border-2 border-[#D9D9D9] rounded-2xl outline-none focus:border-[#24157A]" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-slate-700 uppercase">Tipo</label>
+                    <select value={newStudentAbsence.status} onChange={e => setNewStudentAbsence({...newStudentAbsence, status: e.target.value as any})} className="w-full px-6 py-4 bg-[#F1F1F1] border-2 border-[#D9D9D9] rounded-2xl outline-none focus:border-[#24157A]">
+                      <option value="INJUSTIFICADA">Injustificada</option>
+                      <option value="JUSTIFICADA">Justificada</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-slate-700 uppercase">Motivo</label>
+                  <textarea value={newStudentAbsence.reason} onChange={e => setNewStudentAbsence({...newStudentAbsence, reason: e.target.value})} className="w-full px-6 py-4 bg-[#F1F1F1] border-2 border-[#D9D9D9] rounded-2xl outline-none h-24 resize-none focus:border-[#24157A]" placeholder="Opcional..." />
+                </div>
+                <button type="submit" className="w-full bg-[#24157A] text-white py-5 rounded-2xl font-black shadow-lg hover:bg-[#2E1A8A] transition-colors">GUARDAR FALTA</button>
+              </form>
             </motion.div>
           </div>
         )}

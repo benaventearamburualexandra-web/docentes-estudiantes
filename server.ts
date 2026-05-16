@@ -111,7 +111,8 @@ async function initDb() {
           id TEXT PRIMARY KEY,
           first_name TEXT NOT NULL,
           last_name TEXT NOT NULL,
-          grade_section TEXT
+          grade_section TEXT,
+          schedule TEXT DEFAULT '{}'
         );
 
         CREATE TABLE IF NOT EXISTS student_attendance (
@@ -119,7 +120,16 @@ async function initDb() {
           student_id TEXT REFERENCES students(id) ON DELETE CASCADE,
           type TEXT,
           date TEXT,
-          time TEXT
+          time TEXT,
+          status TEXT DEFAULT 'PUNTUAL'
+        );
+
+        CREATE TABLE IF NOT EXISTS student_absences (
+          id ${idType},
+          student_id TEXT REFERENCES students(id) ON DELETE CASCADE,
+          date TEXT,
+          status TEXT,
+          reason TEXT
         );
       `;
 
@@ -534,18 +544,23 @@ async function startServer() {
   app.get("/api/students", async (req, res) => {
     try {
       const { rows } = await pool.query("SELECT * FROM students ORDER BY last_name ASC");
-      res.json(rows);
+      // Parsear el horario que viene como string desde la DB
+      const parsedRows = rows.map(r => ({
+        ...r,
+        schedule: typeof r.schedule === 'string' ? JSON.parse(r.schedule) : r.schedule
+      }));
+      res.json(parsedRows);
     } catch (err) {
       res.status(500).json({ error: "Error al obtener estudiantes" });
     }
   });
 
   app.post("/api/students", async (req, res) => {
-    const { id, first_name, last_name, grade_section } = req.body;
+    const { id, first_name, last_name, grade_section, schedule } = req.body;
     try {
       await pool.query(
-        "INSERT INTO students (id, first_name, last_name, grade_section) VALUES ($1, $2, $3, $4)",
-        [id, first_name, last_name, grade_section]
+        "INSERT INTO students (id, first_name, last_name, grade_section, schedule) VALUES ($1, $2, $3, $4, $5)",
+        [id, first_name, last_name, grade_section, JSON.stringify(schedule)]
       );
       res.json({ success: true });
     } catch (e: any) {
@@ -565,18 +580,48 @@ async function startServer() {
 
   app.post("/api/student-attendance", async (req, res) => {
     try {
-      const { studentId, type, manualDate, manualTime } = req.body;
+      const { studentId, type, manualDate, manualTime, status: clientStatus } = req.body;
       if (!studentId || !type) return res.status(400).json({ error: "Datos incompletos" });
 
       // Validar si el estudiante existe
-      const studentCheck = await pool.query("SELECT first_name, last_name FROM students WHERE id = $1", [studentId]);
+      const studentCheck = await pool.query("SELECT first_name, last_name, schedule FROM students WHERE id = $1", [studentId]);
       if (studentCheck.rows.length === 0) {
         return res.status(404).json({ error: "Estudiante no encontrado" });
       }
 
       const now = new Date();
+      const timeZone = 'America/Lima';
       const date = manualDate || new Intl.DateTimeFormat('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'America/Lima' }).format(now);
       const time = manualTime || new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false, timeZone: 'America/Lima' }).format(now);
+
+      // Lógica de tardanza para estudiantes
+      let status = clientStatus || 'PUNTUAL';
+      let schedule = studentCheck.rows[0].schedule;
+      if (typeof schedule === 'string') schedule = JSON.parse(schedule);
+
+      if (!clientStatus && type === 'ENTRADA' && schedule) {
+        const dayName = new Intl.DateTimeFormat('en-US', { weekday: 'long', timeZone }).format(now).toLowerCase();
+        const daySched = schedule[dayName];
+        if (daySched?.enabled) {
+          const currentTimeStr = time.substring(0, 5);
+          let refStart = null;
+          if (daySched.slots && daySched.slots.length > 0) {
+            // Busca el bloque más cercano
+            const currentMins = parseInt(currentTimeStr.split(':')[0]) * 60 + parseInt(currentTimeStr.split(':')[1]);
+            let minDiff = Infinity;
+            for (const s of daySched.slots) {
+              const sMins = parseInt(s.start.split(':')[0]) * 60 + parseInt(s.start.split(':')[1]);
+              if (Math.abs(currentMins - sMins) < minDiff) {
+                minDiff = Math.abs(currentMins - sMins);
+                refStart = s.start;
+              }
+            }
+          } else if (daySched.start) {
+            refStart = daySched.start;
+          }
+          if (refStart && currentTimeStr > refStart) status = 'TARDE';
+        }
+      }
 
       // Evitar duplicados rápidos (cooldown 1 minuto para estudiantes)
       const lastMark = await pool.query(
@@ -585,17 +630,20 @@ async function startServer() {
       );
 
       if (lastMark.rows.length > 0) {
-        // Lógica de validación de tiempo similar a la de docentes si se desea
+        const [h1, m1, s1] = lastMark.rows[0].time.split(':').map(Number);
+        const [h2, m2, s2] = time.split(':').map(Number);
+        const diff = (h2*3600 + m2*60 + s2) - (h1*3600 + m1*60 + s1);
+        if (diff < 60 && diff >= 0) return res.status(400).json({ error: "Ya marcaste hace un momento." });
       }
 
       await pool.query(
-        "INSERT INTO student_attendance (student_id, type, date, time) VALUES ($1, $2, $3, $4)",
-        [studentId, type, date, time]
+        "INSERT INTO student_attendance (student_id, type, date, time, status) VALUES ($1, $2, $3, $4, $5)",
+        [studentId, type, date, time, status]
       );
 
       res.json({ 
         success: true, 
-        message: `Asistencia (${type}) registrada para el estudiante`,
+        message: `Asistencia (${type}) registrada como ${status}`,
         studentName: `${studentCheck.rows[0].first_name} ${studentCheck.rows[0].last_name}`
       });
     } catch (error) {
@@ -642,6 +690,119 @@ async function startServer() {
     } catch (e) {
       res.status(500).json({ error: "Error al eliminar falta" });
     }
+  });
+
+  app.get("/api/student-report", async (req, res) => {
+    try {
+      const { rows } = await pool.query(`
+        SELECT sa.id, (s.first_name || ' ' || s.last_name) as student_name, sa.student_id, sa.type, sa.date, sa.time 
+        FROM student_attendance sa 
+        JOIN students s ON sa.student_id = s.id
+        ORDER BY sa.id DESC
+      `);
+      res.json(rows);
+    } catch (err) {
+      res.status(500).json({ error: "Error al generar reporte de estudiantes" });
+    }
+  });
+
+  app.get("/api/student-absences", async (req, res) => {
+    try {
+      const { rows } = await pool.query(`
+        SELECT a.*, (s.first_name || ' ' || s.last_name) as student_name 
+        FROM student_absences a 
+        JOIN students s ON a.student_id = s.id
+        ORDER BY a.date DESC
+      `);
+      res.json(rows);
+    } catch (err) {
+      res.status(500).json({ error: "Error al obtener faltas de estudiantes" });
+    }
+  });
+
+  app.post("/api/student-absences", async (req, res) => {
+    const { studentId, date, status, reason } = req.body;
+    try {
+      await pool.query(
+        "INSERT INTO student_absences (student_id, date, status, reason) VALUES ($1, $2, $3, $4)",
+        [studentId, date, status, reason]
+      );
+      res.json({ success: true });
+    } catch (e) {
+      res.status(500).json({ error: "Error al registrar falta de estudiante" });
+    }
+  });
+
+  // --- LÓGICA DE FALTAS AUTOMÁTICAS ---
+  async function processAutomaticAbsences() {
+    console.log("⏱️ Verificando inasistencias automáticas...");
+    const now = new Date();
+    const timeZone = 'America/Lima';
+    const date = new Intl.DateTimeFormat('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit', timeZone }).format(now);
+    const dayName = new Intl.DateTimeFormat('en-US', { weekday: 'long', timeZone }).format(now).toLowerCase();
+    const currentMins = now.getHours() * 60 + now.getMinutes();
+
+    try {
+      // 1. Docentes
+      const teachers = await pool.query("SELECT id, schedule FROM teachers");
+      for (const t of teachers.rows) {
+        const sched = typeof t.schedule === 'string' ? JSON.parse(t.schedule) : t.schedule;
+        const daySched = sched[dayName];
+        if (daySched?.enabled) {
+          let startStr = daySched.slots?.[0]?.start || daySched.start;
+          if (startStr) {
+            const [sh, sm] = startStr.split(':').map(Number);
+            const startMins = sh * 60 + sm;
+            // Si pasó más de 60 mins del inicio y no hay registro
+            if (currentMins > (startMins + 60)) {
+              const att = await pool.query("SELECT id FROM attendance WHERE teacher_id = $1 AND date = $2 AND type = 'ENTRADA'", [t.id, date]);
+              if (att.rows.length === 0) {
+                const existAbs = await pool.query("SELECT id FROM absences WHERE teacher_id = $1 AND date = $2", [t.id, date]);
+                if (existAbs.rows.length === 0) {
+                  await pool.query("INSERT INTO absences (teacher_id, date, status, reason) VALUES ($1, $2, 'INJUSTIFICADA', 'AUSENCIA AUTOMÁTICA')", [t.id, date]);
+                  console.log(`📌 Falta automática registrada para docente: ${t.id}`);
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // 2. Estudiantes
+      const students = await pool.query("SELECT id, schedule FROM students");
+      for (const s of students.rows) {
+        const sched = typeof s.schedule === 'string' ? JSON.parse(s.schedule) : s.schedule;
+        const daySched = sched[dayName];
+        if (daySched?.enabled) {
+          let startStr = daySched.slots?.[0]?.start || daySched.start;
+          if (startStr) {
+            const [sh, sm] = startStr.split(':').map(Number);
+            const startMins = sh * 60 + sm;
+            if (currentMins > (startMins + 60)) {
+              const att = await pool.query("SELECT id FROM student_attendance WHERE student_id = $1 AND date = $2 AND type = 'ENTRADA'", [s.id, date]);
+              if (att.rows.length === 0) {
+                const existAbs = await pool.query("SELECT id FROM student_absences WHERE student_id = $1 AND date = $2", [s.id, date]);
+                if (existAbs.rows.length === 0) {
+                  await pool.query("INSERT INTO student_absences (student_id, date, status, reason) VALUES ($1, $2, 'INJUSTIFICADA', 'AUSENCIA AUTOMÁTICA')", [s.id, date]);
+                  console.log(`📌 Falta automática registrada para estudiante: ${s.id}`);
+                }
+              }
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.error("Error en faltas automáticas:", e);
+    }
+  }
+
+  // Ejecutar cada 30 minutos
+  setInterval(processAutomaticAbsences, 30 * 60 * 1000);
+  
+  // Ruta para forzar la verificación manual desde el panel
+  app.post("/api/admin/trigger-absences", async (req, res) => {
+    await processAutomaticAbsences();
+    res.json({ success: true, message: "Verificación de inasistencias completada." });
   });
 
   // Vite middleware for development
