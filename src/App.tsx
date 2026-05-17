@@ -107,15 +107,15 @@ export default function App() {
     }).reverse();
 
     const today = last7Days[6];
-    const totalMembers = teachers.length + students.length;
+    const totalMembers = (Array.isArray(teachers) ? teachers.length : 0) + (Array.isArray(students) ? students.length : 0);
     
-    const allRecords = [...records, ...studentRecords];
-    const allAbsences = [...absences, ...studentAbsences];
+    const allRecords = Array.isArray(records) ? [...records, ...(Array.isArray(studentRecords) ? studentRecords : [])] : [];
+    const allAbsences = Array.isArray(absences) ? [...absences, ...(Array.isArray(studentAbsences) ? studentAbsences : [])] : [];
 
-    const attToday = allRecords.filter(r => r.date === today && r.type === 'ENTRADA').length;
+    const attToday = allRecords.filter(r => r && r.date === today && r.type === 'ENTRADA').length;
     
-    const totalEntries = allRecords.filter(r => r.type === 'ENTRADA').length;
-    const punctualCount = allRecords.filter(r => r.type === 'ENTRADA' && r.status === 'PUNTUAL').length;
+    const totalEntries = allRecords.filter(r => r && r.type === 'ENTRADA').length;
+    const punctualCount = allRecords.filter(r => r && r.type === 'ENTRADA' && r.status === 'PUNTUAL').length;
     const punctualityRate = totalEntries > 0 ? ((punctualCount / totalEntries) * 100).toFixed(2) : "0.00";
 
     const totalFaltas = allAbsences.length;
@@ -124,14 +124,14 @@ export default function App() {
 
     // Cálculo de tendencias para los gráficos de barras
     const trends = {
-      events: last7Days.map(date => allRecords.filter(r => r.date === date).length),
+      events: last7Days.map(date => allRecords.filter(r => r && r.date === date).length),
       punctuality: last7Days.map(date => {
-        const dayEntries = allRecords.filter(r => r.date === date && r.type === 'ENTRADA');
-        return dayEntries.length > 0 ? (dayEntries.filter(r => r.status === 'PUNTUAL').length / dayEntries.length) * 100 : 0;
+        const dayEntries = allRecords.filter(r => r && r.date === date && r.type === 'ENTRADA');
+        return dayEntries.length > 0 ? (dayEntries.filter(r => r && r.status === 'PUNTUAL').length / dayEntries.length) * 100 : 0;
       }),
-      absences: last7Days.map(date => allAbsences.filter(a => a.date === date).length),
+      absences: last7Days.map(date => allAbsences.filter(a => a && a.date === date).length),
       activeUsers: last7Days.map(date => {
-        const ids = allRecords.filter(r => r.date === date).map(r => r.teacher_id || (r as any).student_id);
+        const ids = allRecords.filter(r => r && r.date === date).map(r => r?.teacher_id || (r as any)?.student_id);
         return new Set(ids.filter(Boolean)).size;
       })
     };
@@ -223,39 +223,48 @@ export default function App() {
 
   // --- FUNCIONES DE QR (CARGA DINÁMICA) ---
   const stopScanner = async () => {
+    const scanner = scannerRef.current;
+    if (!scanner) return;
+    
     try {
-      if (scannerRef.current) {
-        if (scannerRef.current.isScanning) {
-          await scannerRef.current.stop();
-        }
-        scannerRef.current.clear();
+      if (scanner.isScanning) {
+        await scanner.stop();
       }
+      scanner.clear();
     } catch (e) { 
-      console.warn("Aviso al detener escáner:", e); 
+      console.warn("Aviso al detener cámara:", e); 
     } finally {
       scannerRef.current = null;
       setIsCameraActive(false);
+      isInitializingRef.current = false;
     }
   };
 
   const startScanner = async () => {
     if (isInitializingRef.current) return;
     isInitializingRef.current = true;
-    const element = document.getElementById("reader");
-    if (!element) { isInitializingRef.current = false; return; }
-    setScannerError(null);
-
     try {
+      // Reducimos el tiempo de espera para que la cámara abra instantáneamente
+      await new Promise(r => setTimeout(r, 50));
+      const element = document.getElementById("reader");
+      
+      if (!element || activeTab !== 'asistencia' || mode !== 'scan') {
+        isInitializingRef.current = false;
+        return;
+      }
+
+      setScannerError(null);
       await stopScanner();
 
-      // Si el usuario ya cambió de pestaña mientras cargaba el módulo, abortamos
-      if (activeTab !== 'asistencia') return;
-
-      scannerRef.current = new Html5Qrcode("reader");
+      // OPTIMIZACIÓN DE VELOCIDAD: Solo soportar QR_CODE reduce el tiempo de arranque drásticamente
+      scannerRef.current = new Html5Qrcode("reader", { 
+        formatsToSupport: [ Html5QrcodeSupportedFormats.QR_CODE ],
+        verbose: false 
+      });
 
       const config = {
-        fps: 10, // 10 FPS es suficiente y consume menos recursos
-        qrbox: { width: 250, height: 250 }, // Caja fija para evitar cálculos costosos
+        fps: 20, // Mayor FPS para detección inmediata
+        qrbox: { width: 260, height: 260 },
         aspectRatio: 1.0
       };
 
@@ -277,9 +286,11 @@ export default function App() {
         },
         () => {}
       );
-      setIsCameraActive(true);
+      if (document.getElementById("reader")) {
+        setIsCameraActive(true);
+      }
     } catch (err) {
-      setScannerError("Error al iniciar cámara. Verifica los permisos del navegador.");
+      console.error("Scanner error:", err);
       setIsCameraActive(false);
       toast.error("No se pudo acceder a la cámara", {
         icon: '📷',
@@ -916,8 +927,8 @@ export default function App() {
                 </div>
                 <div className="p-10">
                   {mode === 'scan' ? (
-                    <div className="space-y-4">
-                      <div id="reader" className="w-full aspect-square bg-slate-50 rounded-[2.5rem] border-4 border-dashed border-slate-200 overflow-hidden relative">
+                    <div className="space-y-4" key={`scanner-${activeTab}`}>
+                      <div id="reader" className="w-full aspect-square bg-black rounded-[2.5rem] border-4 border-dashed border-slate-200 overflow-hidden relative">
                       {!isCameraActive && (
                         <button type="button" onClick={startScanner} className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-white/80 hover:bg-white transition-colors z-10">
                           <Camera size={40} className="text-[#24157A]" />

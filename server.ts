@@ -256,12 +256,27 @@ async function startServer() {
 
   app.post("/api/students", async (req, res) => {
     const { id, first_name, last_name, grade_section, parent_phone, schedule } = req.body;
+    
+    if (!id || !first_name || !last_name) {
+      return res.status(400).json({ error: "El ID, Nombres y Apellidos son obligatorios." });
+    }
+
     try {
-      await pool.query("INSERT INTO students (id, first_name, last_name, grade_section, parent_phone, schedule) VALUES ($1, $2, $3, $4, $5, $6)", [id, first_name, last_name, grade_section, parent_phone, JSON.stringify(schedule)]);
+      const scheduleStr = schedule ? JSON.stringify(schedule) : '{}';
+      await pool.query(
+        "INSERT INTO students (id, first_name, last_name, grade_section, parent_phone, schedule) VALUES ($1, $2, $3, $4, $5, $6)", 
+        [id, first_name, last_name, grade_section || '', parent_phone || '', scheduleStr]
+      );
       res.json({ success: true });
     } catch (e: any) { 
-      console.error("❌ Error en DB al registrar estudiante:", e.message);
-      res.status(400).json({ error: e.message.includes('unique') ? "El ID ya existe." : "Error interno al guardar." }); 
+      const errorMsg = e.message || '';
+      console.error("❌ Error en DB al registrar estudiante:", errorMsg);
+      
+      const isDuplicate = errorMsg.toLowerCase().includes('unique') || errorMsg.toLowerCase().includes('duplicate');
+      
+      res.status(400).json({ 
+        error: isDuplicate ? "Este ID/DNI ya pertenece a otro estudiante." : "Error al guardar: Verifique que todos los campos sean correctos." 
+      }); 
     }
   });
 
