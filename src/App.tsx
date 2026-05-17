@@ -27,7 +27,7 @@ import { TeacherModal } from './TeacherModal';
 import { StudentModal } from './StudentModal';
 import { AbsenceModal } from './AbsenceModal';
 import { QRModal } from './QRModal';
-import { exportToExcel, prepareExportData } from './services/excelService';
+import { exportToExcel, prepareExportData } from './excelService';
 
 export default function App() {
   const [adminUser, setAdminUser] = useState<{username: string, name: string} | null>(() => {
