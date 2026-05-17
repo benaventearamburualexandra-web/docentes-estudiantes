@@ -753,11 +753,14 @@ export default function App() {
     try {
       const data = await registerStudent(newStudent);
       if (data.success) {
-        const message = data.offline ? 'Guardado localmente (Modo Offline)' : 'Estudiante registrado con éxito';
+        const message = data.offline 
+          ? '⚠️ Guardado localmente (Sin internet)' 
+          : '✅ Estudiante registrado en la base de datos';
         toast.success(message, { id: loading });
         
-        // Mostramos el QR usando los datos del formulario antes de resetearlo
-        setSelectedStudentQR({ ...newStudent }); 
+        // IMPORTANTE: Primero activamos el QR con una COPIA de los datos
+        setSelectedStudentQR({ ...newStudent });
+        // Luego cerramos el modal y reseteamos
         setShowAddStudent(false);
         setNewStudent({ id: '', first_name: '', last_name: '', grade_section: '', parent_phone: '', schedule: INITIAL_SCHEDULE });
         fetchData();

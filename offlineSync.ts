@@ -8,14 +8,25 @@ const STUDENT_ATTENDANCE_KEY = 'pending_student_attendance';
  * Ayudante para peticiones fetch consistentes
  */
 async function safeFetch(url: string, data: any) {
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  });
-  const json = await res.json();
-  if (!res.ok) return { success: false, error: json.error || 'Error en el servidor' };
-  return json;
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    
+    const contentType = res.headers.get("content-type");
+    if (contentType && contentType.indexOf("application/json") !== -1) {
+      const json = await res.json();
+      if (!res.ok) return { success: false, error: json.error || 'Error en el servidor' };
+      return json;
+    } else {
+      const text = await res.text();
+      return { success: false, error: `Error del servidor: ${res.status}` };
+    }
+  } catch (e) {
+    throw e; // Lanza para que el catch del llamador active el modo offline
+  }
 }
 
 /**
@@ -111,14 +122,7 @@ export async function registerStudentAttendance(studentId: string, type: 'ENTRAD
 
 export async function registerStudent(studentData: any) {
   try {
-    const res = await fetch('/api/students', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(studentData),
-    });
-    const data = await res.json();
-    if (!res.ok) return { success: false, error: data.error || 'Error en el servidor' };
-    return data;
+    return await safeFetch('/api/students', studentData);
   } catch (error) {
     const pending = JSON.parse(localStorage.getItem(STUDENTS_KEY) || '[]');
     pending.push(studentData);

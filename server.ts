@@ -259,7 +259,10 @@ async function startServer() {
     try {
       await pool.query("INSERT INTO students (id, first_name, last_name, grade_section, parent_phone, schedule) VALUES ($1, $2, $3, $4, $5, $6)", [id, first_name, last_name, grade_section, parent_phone, JSON.stringify(schedule)]);
       res.json({ success: true });
-    } catch (e) { res.status(400).json({ error: "El ID ya existe." }); }
+    } catch (e: any) { 
+      console.error("❌ Error en DB al registrar estudiante:", e.message);
+      res.status(400).json({ error: e.message.includes('unique') ? "El ID ya existe." : "Error interno al guardar." }); 
+    }
   });
 
   app.delete("/api/students/:id", async (req, res) => {
