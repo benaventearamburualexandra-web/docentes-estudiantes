@@ -758,13 +758,14 @@ export default function App() {
       const data = await registerStudent(newStudent);
       if (data.success) {
         const message = data.offline 
-          ? '⚠️ Guardado localmente (Sin internet)' 
+          ? '⚠️ Guardado localmente (Se sincronizará al detectar internet)' 
           : '✅ Estudiante registrado en la base de datos';
         toast.success(message, { id: loading });
         
-        // IMPORTANTE: Primero activamos el QR con una COPIA de los datos
-        setSelectedStudentQR({ ...newStudent });
-        // Luego cerramos el modal y reseteamos
+        // Forzamos la generación del QR con una copia profunda de los datos actuales
+        const studentToQR = JSON.parse(JSON.stringify(newStudent));
+        setSelectedStudentQR(studentToQR);
+
         setShowAddStudent(false);
         setNewStudent({ id: '', first_name: '', last_name: '', grade_section: '', parent_phone: '', schedule: INITIAL_SCHEDULE });
         fetchData();
