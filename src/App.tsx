@@ -223,45 +223,33 @@ export default function App() {
 
   // --- FUNCIONES DE QR (CARGA DINÁMICA) ---
   const stopScanner = async () => {
-    if (scannerRef.current) {
-      try {
-        if (scannerRef.current.isScanning) {
-          await scannerRef.current.stop();
-        }
-        // Pausa necesaria para liberar el hardware de la cámara
-        await new Promise(r => setTimeout(r, 100));
-        const element = document.getElementById("reader");
-        if (element) element.innerHTML = ""; // Limpieza manual del DOM
-      } catch (e) { 
-        console.warn("Aviso al detener cámara:", e); 
-      } finally {
-        if (scannerRef.current) {
-          try { scannerRef.current.clear(); } catch(e) {}
-        }
-        scannerRef.current = null;
-        setIsCameraActive(false);
-        isInitializingRef.current = false;
+    if (!scannerRef.current) return;
+    try {
+      if (scannerRef.current.isScanning) {
+        await scannerRef.current.stop();
       }
+      await scannerRef.current.clear();
+    } catch (e) { 
+      console.warn("Aviso al detener cámara:", e); 
+    } finally {
+      scannerRef.current = null;
+      setIsCameraActive(false);
+      isInitializingRef.current = false;
     }
   };
 
   const startScanner = async () => {
-    if (isInitializingRef.current) return;
+    if (isInitializingRef.current || scannerRef.current) return;
     isInitializingRef.current = true;
     try {
-      await stopScanner(); // Asegurar que no hay instancias previas
-      await new Promise(r => setTimeout(r, 400));
-      
       const element = document.getElementById("reader");
       if (!element || activeTab !== 'asistencia' || mode !== 'scan') {
-        throw new Error("Contenedor no listo");
+        isInitializingRef.current = false;
+        return;
       }
-
       setScannerError(null);
-
       const scanner = new Html5Qrcode("reader", { verbose: false });
       scannerRef.current = scanner;
-
       await scanner.start(
         { facingMode: "environment" },
         { fps: 20, qrbox: { width: 150, height: 150 }, aspectRatio: 1.0 },
@@ -917,8 +905,8 @@ export default function App() {
                 </div>
                 <div className="p-10">
                   {mode === 'scan' ? (
-                    <div className="space-y-4" key="scanner-container">
-                      <div id="reader" className="w-full max-w-[250px] mx-auto aspect-square bg-slate-900 rounded-[2.5rem] border-4 border-dashed border-slate-700 overflow-hidden relative shadow-inner">
+                    <div className="space-y-4">
+                      <div id="reader" className="w-full max-w-[250px] mx-auto aspect-square bg-slate-900 rounded-[2.5rem] border-4 border-dashed border-slate-700 relative shadow-inner">
                       {!isCameraActive && (
                         <button type="button" onClick={startScanner} className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-white/80 hover:bg-white transition-colors z-10">
                           <Camera size={40} className="text-[#24157A]" />
