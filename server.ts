@@ -147,8 +147,11 @@ async function initDb() {
         for (const table of tables) {
           try {
             await pool.query(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY;`);
+            // Crear política para permitir TODO a usuarios anónimos (necesario para este tipo de app sin Auth complejo)
+            await pool.query(`DROP POLICY IF EXISTS "Permitir Todo" ON ${table};`);
+            await pool.query(`CREATE POLICY "Permitir Todo" ON ${table} FOR ALL USING (true) WITH CHECK (true);`);
           } catch (e) {
-            // Si falla o ya está activado, continuamos sin detener el servidor
+            console.warn(`Aviso RLS en tabla ${table}:`, e.message);
           }
         }
       }

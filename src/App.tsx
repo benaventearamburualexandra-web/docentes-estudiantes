@@ -228,12 +228,16 @@ export default function App() {
         if (scannerRef.current.isScanning) {
           await scannerRef.current.stop();
         }
-        // Pequeña pausa para asegurar liberación de hardware
-        await new Promise(r => setTimeout(r, 50));
-        scannerRef.current.clear();
+        // Pausa necesaria para liberar el hardware de la cámara
+        await new Promise(r => setTimeout(r, 100));
+        const element = document.getElementById("reader");
+        if (element) element.innerHTML = ""; // Limpieza manual del DOM
       } catch (e) { 
         console.warn("Aviso al detener cámara:", e); 
       } finally {
+        if (scannerRef.current) {
+          try { scannerRef.current.clear(); } catch(e) {}
+        }
         scannerRef.current = null;
         setIsCameraActive(false);
         isInitializingRef.current = false;
@@ -245,31 +249,22 @@ export default function App() {
     if (isInitializingRef.current) return;
     isInitializingRef.current = true;
     try {
-      // Espera más larga para asegurar que el DOM esté listo y evitar pantalla blanca
-      await new Promise(r => setTimeout(r, 300));
-      const element = document.getElementById("reader");
+      await stopScanner(); // Asegurar que no hay instancias previas
+      await new Promise(r => setTimeout(r, 400));
       
+      const element = document.getElementById("reader");
       if (!element || activeTab !== 'asistencia' || mode !== 'scan') {
-        isInitializingRef.current = false;
-        return;
+        throw new Error("Contenedor no listo");
       }
 
       setScannerError(null);
-      await stopScanner();
 
-      // Inicialización simple para evitar fallos de compatibilidad
       const scanner = new Html5Qrcode("reader", { verbose: false });
       scannerRef.current = scanner;
 
-      const config = {
-        fps: 20, // Más FPS para rapidez
-        qrbox: { width: 260, height: 260 },
-        aspectRatio: 1.0
-      };
-
-      await scannerRef.current.start(
+      await scanner.start(
         { facingMode: "environment" },
-        config,
+        { fps: 20, qrbox: { width: 250, height: 250 }, aspectRatio: 1.0 },
         (text) => {
           if (activeTab !== 'asistencia') return;
           const now = Date.now();
@@ -281,18 +276,17 @@ export default function App() {
         },
         () => { /* ignorar errores silenciosos */ }
       );
-      
-      if (document.getElementById("reader")) {
-        setIsCameraActive(true);
-      }
+      setIsCameraActive(true);
     } catch (err) {
       console.error("Scanner error:", err);
       setIsCameraActive(false);
-      toast.error("No se pudo acceder a la cámara", {
-        icon: '📷',
-        style: { borderRadius: '15px', background: '#333', color: '#fff' }
-      });
-    } finally { isInitializingRef.current = false; }
+      // Solo mostrar error si seguimos en la pestaña de asistencia
+      if (activeTab === 'asistencia') {
+        toast.error("Error al iniciar cámara. Reintente.", { icon: '📷' });
+      }
+    } finally { 
+      isInitializingRef.current = false; 
+    }
   };
 
   const handleDeleteStudent = async (id: string) => {

@@ -1,9 +1,13 @@
-node_modules/
-build/
-dist/
-coverage/
+node_modules
+.env
+dist
+*.db
+*.db-journal
+.vscode
 .DS_Store
-*.log
-.env*
-!.env.example
-asistencia.db
+
+# Archivos de registro de npm
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
