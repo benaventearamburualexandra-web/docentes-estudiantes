@@ -225,9 +225,8 @@ export default function App() {
   const stopScanner = async () => {
     if (!scannerRef.current) return;
     try {
-      if (scannerRef.current.isScanning) {
-        await scannerRef.current.stop();
-      }
+      // Intentamos detener el escaneo sin depender de isScanning para evitar errores de stream
+      try { await scannerRef.current.stop(); } catch(e) {}
       await scannerRef.current.clear();
     } catch (e) { 
       console.warn("Aviso al detener cámara:", e); 
@@ -252,7 +251,7 @@ export default function App() {
       scannerRef.current = scanner;
       await scanner.start(
         { facingMode: "environment" },
-        { fps: 20, qrbox: { width: 150, height: 150 }, aspectRatio: 1.0 },
+        { fps: 20, qrbox: { width: 140, height: 140 }, aspectRatio: 1.0 },
         (text) => {
           if (activeTab !== 'asistencia') return;
           const now = Date.now();
@@ -906,14 +905,14 @@ export default function App() {
                 <div className="p-10">
                   {mode === 'scan' ? (
                     <div className="space-y-4">
-                      <div id="reader" className="w-full max-w-[250px] mx-auto aspect-square bg-slate-900 rounded-[2.5rem] border-4 border-dashed border-slate-700 relative shadow-inner">
-                      {!isCameraActive && (
-                        <button type="button" onClick={startScanner} className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-white/80 hover:bg-white transition-colors z-10">
-                          <Camera size={40} className="text-[#24157A]" />
-                          <span className="font-bold text-gray-700">Activar Cámara</span>
-                        </button>
-                      )}
-                    </div>
+                      <div id="reader" className="w-full max-w-[250px] mx-auto aspect-square bg-slate-900 rounded-[2.5rem] border-4 border-dashed border-slate-700 relative shadow-inner overflow-hidden">
+                        {!isCameraActive && (
+                          <button type="button" onClick={startScanner} className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-white/80 hover:bg-white transition-colors z-10">
+                            <Camera size={40} className="text-[#24157A]" />
+                            <span className="font-bold text-gray-700">Activar Cámara</span>
+                          </button>
+                        )}
+                      </div>
                     {isCameraActive && (
                       <p className="text-center text-[10px] font-black text-[#24157A] animate-pulse">
                         SISTEMA LISTO: MUESTRA EL CÓDIGO QR
