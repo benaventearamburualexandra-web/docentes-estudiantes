@@ -223,13 +223,16 @@ export default function App() {
 
   // --- FUNCIONES DE QR (CARGA DINÁMICA) ---
   const stopScanner = async () => {
-    if (scannerRef.current) {
-      try {
+    try {
+      if (scannerRef.current) {
         if (scannerRef.current.isScanning) {
           await scannerRef.current.stop();
         }
         scannerRef.current.clear();
-      } catch (e) { console.error("Error stopping scanner:", e); }
+      }
+    } catch (e) { 
+      console.warn("Aviso al detener escáner:", e); 
+    } finally {
       scannerRef.current = null;
       setIsCameraActive(false);
     }
@@ -876,20 +879,57 @@ export default function App() {
           
           {activeTab === 'asistencia' && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-8 max-w-2xl mx-auto">
+              {/* Selectores de Tipo de Registro */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-white p-2 rounded-3xl border border-[#D9D9D9] flex shadow-sm">
+                  <button 
+                    onClick={() => setAttendanceType('ENTRADA')} 
+                    className={`flex-1 py-3 rounded-2xl font-black text-xs transition-all ${attendanceType === 'ENTRADA' ? 'bg-[#24157A] text-white' : 'text-slate-400'}`}
+                  >ENTRADA</button>
+                  <button 
+                    onClick={() => setAttendanceType('SALIDA')} 
+                    className={`flex-1 py-3 rounded-2xl font-black text-xs transition-all ${attendanceType === 'SALIDA' ? 'bg-rose-600 text-white' : 'text-slate-400'}`}
+                  >SALIDA</button>
+                </div>
+                <div className="bg-white p-2 rounded-3xl border border-[#D9D9D9] flex shadow-sm">
+                  <button 
+                    onClick={() => setEntityType('docente')} 
+                    className={`flex-1 py-3 rounded-2xl font-black text-xs transition-all ${entityType === 'docente' ? 'bg-[#24157A] text-white' : 'text-slate-400'}`}
+                  >DOCENTE</button>
+                  <button 
+                    onClick={() => setEntityType('estudiante')} 
+                    className={`flex-1 py-3 rounded-2xl font-black text-xs transition-all ${entityType === 'estudiante' ? 'bg-[#59C65B] text-white' : 'text-slate-400'}`}
+                  >ALUMNO</button>
+                </div>
+              </div>
+
               <div className="bg-white rounded-[2.5rem] shadow-2xl border border-[#D9D9D9] overflow-hidden">
                 <div className="flex border-b border-[#D9D9D9]">
-                  <button onClick={() => setMode('scan')} className={`flex-1 py-4 font-bold ${mode === 'scan' ? 'bg-[#F1F1F1] text-[#24157A] border-b-4 border-[#24157A]' : 'text-slate-500'}`}>Escáner</button>
-                  <button onClick={() => setMode('manual')} className={`flex-1 py-4 font-bold ${mode === 'manual' ? 'bg-[#F1F1F1] text-[#24157A] border-b-4 border-[#24157A]' : 'text-slate-500'}`}>Manual</button>
+                  <button 
+                    onClick={() => { setMode('scan'); setTimeout(startScanner, 100); }} 
+                    className={`flex-1 py-4 font-bold ${mode === 'scan' ? 'bg-[#F1F1F1] text-[#24157A] border-b-4 border-[#24157A]' : 'text-slate-500'}`}
+                  >Escáner QR</button>
+                  <button 
+                    onClick={() => { setMode('manual'); stopScanner(); }} 
+                    className={`flex-1 py-4 font-bold ${mode === 'manual' ? 'bg-[#F1F1F1] text-[#24157A] border-b-4 border-[#24157A]' : 'text-slate-500'}`}
+                  >Ingreso Manual</button>
                 </div>
                 <div className="p-10">
                   {mode === 'scan' ? (
-                    <div id="reader" className="w-full aspect-square bg-slate-50 rounded-[2.5rem] border-4 border-dashed border-slate-200 overflow-hidden relative">
+                    <div className="space-y-4">
+                      <div id="reader" className="w-full aspect-square bg-slate-50 rounded-[2.5rem] border-4 border-dashed border-slate-200 overflow-hidden relative">
                       {!isCameraActive && (
-                        <button onClick={startScanner} className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-white/80 hover:bg-white transition-colors">
+                        <button type="button" onClick={startScanner} className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-white/80 hover:bg-white transition-colors z-10">
                           <Camera size={40} className="text-[#24157A]" />
                           <span className="font-bold text-gray-700">Activar Cámara</span>
                         </button>
                       )}
+                    </div>
+                    {isCameraActive && (
+                      <p className="text-center text-[10px] font-black text-[#24157A] animate-pulse">
+                        SISTEMA LISTO: MUESTRA EL CÓDIGO QR
+                      </p>
+                    )}
                     </div>
                   ) : (
                     <form onSubmit={(e) => { e.preventDefault(); entityType === 'docente' ? handleAttendance(teacherId) : handleStudentAttendance(teacherId); }} className="space-y-6">
@@ -920,7 +960,7 @@ export default function App() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
-                    {teachers.map(t => (
+                    {Array.isArray(teachers) && teachers.map(t => (
                       <tr key={t.id} className="hover:bg-slate-50/50 transition-colors">
                         <td className="p-6">
                           <p className="font-bold text-slate-800">{t.first_name} {t.last_name}</p>
@@ -962,7 +1002,7 @@ export default function App() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
-                    {students.map(s => (
+                    {Array.isArray(students) && students.map(s => (
                       <tr key={s.id} className="hover:bg-slate-50/50 transition-colors">
                         <td className="p-6">
                           <p className="font-bold text-slate-800">{s.last_name}, {s.first_name}</p>
