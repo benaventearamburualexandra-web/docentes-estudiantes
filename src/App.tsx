@@ -264,7 +264,7 @@ export default function App() {
 
       await scanner.start(
         { facingMode: "environment" },
-        { fps: 20, qrbox: { width: 250, height: 250 }, aspectRatio: 1.0 },
+        { fps: 20, qrbox: { width: 150, height: 150 }, aspectRatio: 1.0 },
         (text) => {
           if (activeTab !== 'asistencia') return;
           const now = Date.now();
@@ -918,7 +918,7 @@ export default function App() {
                 <div className="p-10">
                   {mode === 'scan' ? (
                     <div className="space-y-4" key="scanner-container">
-                      <div id="reader" className="w-full aspect-square bg-slate-900 rounded-[2.5rem] border-4 border-dashed border-slate-700 overflow-hidden relative shadow-inner">
+                      <div id="reader" className="w-full max-w-[250px] mx-auto aspect-square bg-slate-900 rounded-[2.5rem] border-4 border-dashed border-slate-700 overflow-hidden relative shadow-inner">
                       {!isCameraActive && (
                         <button type="button" onClick={startScanner} className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-white/80 hover:bg-white transition-colors z-10">
                           <Camera size={40} className="text-[#24157A]" />

@@ -143,6 +143,14 @@ async function initDb() {
       // Habilitar Row Level Security (RLS) en Supabase para mayor seguridad
       // Esto resuelve la advertencia de "RLS Disabled in Public"
       if (isRender) {
+        // Asegurar que las columnas nuevas existan si la tabla ya fue creada previamente
+        try {
+          await pool.query(`ALTER TABLE students ADD COLUMN IF NOT EXISTS parent_phone TEXT;`);
+          await pool.query(`ALTER TABLE students ADD COLUMN IF NOT EXISTS schedule TEXT DEFAULT '{}';`);
+        } catch (e) {
+          console.warn("Aviso al actualizar columnas de estudiantes:", e.message);
+        }
+
         const tables = ['teachers', 'attendance', 'absences', 'admins', 'students', 'student_attendance', 'student_absences'];
         for (const table of tables) {
           try {
