@@ -5,6 +5,20 @@ const STUDENTS_KEY = 'pending_students';
 const STUDENT_ATTENDANCE_KEY = 'pending_student_attendance';
 
 /**
+ * Ayudante para peticiones fetch consistentes
+ */
+async function safeFetch(url: string, data: any) {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  const json = await res.json();
+  if (!res.ok) return { success: false, error: json.error || 'Error en el servidor' };
+  return json;
+}
+
+/**
  * Intenta registrar la asistencia. Si falla (sin red), la guarda en LocalStorage.
  */
 export async function registerAttendance(teacherId: string, type: 'ENTRADA' | 'SALIDA', status: string = 'PUNTUAL') {
@@ -23,14 +37,7 @@ export async function registerAttendance(teacherId: string, type: 'ENTRADA' | 'S
   };
 
   try {
-    const response = await fetch('/api/attendance', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(attendanceData),
-    });
-
-    if (!response.ok) throw new Error('Error en el servidor');
-    return await response.json();
+    return await safeFetch('/api/attendance', attendanceData);
   } catch (error) {
     console.warn("⚠️ Sin conexión. Guardando en LocalStorage...");
     const pending = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
@@ -45,13 +52,7 @@ export async function registerAttendance(teacherId: string, type: 'ENTRADA' | 'S
  */
 export async function registerTeacher(teacherData: any) {
   try {
-    const res = await fetch('/api/teachers', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(teacherData),
-    });
-    if (!res.ok) throw new Error();
-    return await res.json();
+    return await safeFetch('/api/teachers', teacherData);
   } catch (error) {
     const pending = JSON.parse(localStorage.getItem(TEACHERS_KEY) || '[]');
     pending.push(teacherData);
@@ -70,8 +71,9 @@ export async function registerAbsence(absenceData: any) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(absenceData),
     });
-    if (!res.ok) throw new Error();
-    return await res.json();
+    const data = await res.json();
+    if (!res.ok) return { success: false, error: data.error || 'Error en el servidor' };
+    return data;
   } catch (error) {
     const pending = JSON.parse(localStorage.getItem(ABSENCES_KEY) || '[]');
     pending.push(absenceData);
@@ -96,8 +98,9 @@ export async function registerStudentAttendance(studentId: string, type: 'ENTRAD
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(attendanceData),
     });
-    if (!res.ok) throw new Error();
-    return await res.json();
+    const data = await res.json();
+    if (!res.ok) return { success: false, error: data.error || 'Error en el servidor' };
+    return data;
   } catch (error) {
     const pending = JSON.parse(localStorage.getItem(STUDENT_ATTENDANCE_KEY) || '[]');
     pending.push(attendanceData);
@@ -113,8 +116,9 @@ export async function registerStudent(studentData: any) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(studentData),
     });
-    if (!res.ok) throw new Error();
-    return await res.json();
+    const data = await res.json();
+    if (!res.ok) return { success: false, error: data.error || 'Error en el servidor' };
+    return data;
   } catch (error) {
     const pending = JSON.parse(localStorage.getItem(STUDENTS_KEY) || '[]');
     pending.push(studentData);
