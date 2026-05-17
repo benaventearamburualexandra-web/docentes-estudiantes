@@ -1001,9 +1001,12 @@ export default function App() {
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
               <div className="flex justify-between items-center bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
                 <h2 className="text-2xl font-black text-slate-800">Personal Docente</h2>
-                <button onClick={() => setShowAddTeacher(true)} className="bg-[#24157A] text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 hover:bg-[#2E1A8A] transition-all">
-                  <UserPlus size={20} /> Nuevo Docente
-                </button>
+                <div className="flex gap-3">
+                  <button onClick={() => exportToExcel(teachers, 'Lista_Docentes')} className="bg-amber-500 text-white px-6 py-3 rounded-2xl font-bold text-xs flex items-center gap-2 hover:bg-amber-600 transition-all shadow-md"><Download size={18} /> Descargar Lista</button>
+                  <button onClick={() => setShowAddTeacher(true)} className="bg-[#24157A] text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 hover:bg-[#2E1A8A] transition-all">
+                    <UserPlus size={20} /> Nuevo Docente
+                  </button>
+                </div>
               </div>
               <div className="bg-white rounded-[2.5rem] border border-[#D9D9D9] overflow-hidden shadow-xl">
                 <table className="w-full text-left border-collapse">
@@ -1043,9 +1046,12 @@ export default function App() {
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
               <div className="flex justify-between items-center bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
                 <h2 className="text-2xl font-black text-slate-800">Alumnado</h2>
-                <button onClick={() => setShowAddStudent(true)} className="bg-[#59C65B] text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 hover:bg-[#6EDB63] transition-all">
-                  <UserPlus size={20} /> Nuevo Estudiante
-                </button>
+                <div className="flex gap-3">
+                  <button onClick={() => exportToExcel(students, 'Lista_Estudiantes')} className="bg-amber-500 text-white px-6 py-3 rounded-2xl font-bold text-xs flex items-center gap-2 hover:bg-amber-600 transition-all shadow-md"><Download size={18} /> Descargar Lista</button>
+                  <button onClick={() => setShowAddStudent(true)} className="bg-[#59C65B] text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 hover:bg-[#6EDB63] transition-all">
+                    <UserPlus size={20} /> Nuevo Estudiante
+                  </button>
+                </div>
               </div>
               <div className="bg-white rounded-[2.5rem] border border-[#D9D9D9] overflow-hidden shadow-xl">
                 <table className="w-full text-left border-collapse">
@@ -1088,7 +1094,7 @@ export default function App() {
                   </div>
                   <div className="flex gap-3">
                     <input type="month" value={reportMonth} onChange={(e) => setReportMonth(e.target.value)} className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-xs outline-none" />
-                    <button onClick={downloadExcel} className="bg-[#59C65B] text-white px-6 py-2 rounded-xl font-bold text-xs flex items-center gap-2 hover:bg-[#6EDB63] transition-all shadow-md"><Download size={16} /> Exportar</button>
+                    <button onClick={downloadExcel} className="bg-amber-500 text-white px-6 py-2 rounded-xl font-bold text-xs flex items-center gap-2 hover:bg-amber-600 transition-all shadow-md"><Download size={16} /> Exportar Excel</button>
                     <button onClick={downloadPDF} className="bg-rose-600 text-white px-6 py-2 rounded-xl font-bold text-xs flex items-center gap-2 hover:bg-rose-700 transition-all shadow-md"><FileText size={16} /> PDF</button>
                   </div>
                 </div>
@@ -1128,9 +1134,12 @@ export default function App() {
                     <button onClick={() => setEntityType('docente')} className={`px-6 py-2 rounded-xl font-bold text-xs transition-all ${entityType === 'docente' ? 'bg-white text-[#24157A] shadow-sm' : 'text-slate-500'}`}>Docentes</button>
                     <button onClick={() => setEntityType('estudiante')} className={`px-6 py-2 rounded-xl font-bold text-xs transition-all ${entityType === 'estudiante' ? 'bg-white text-[#24157A] shadow-sm' : 'text-slate-500'}`}>Estudiantes</button>
                   </div>
-                  <button onClick={() => entityType === 'docente' ? setShowAddAbsence(true) : setShowAddStudentAbsence(true)} className="bg-[#24157A] text-white px-6 py-3 rounded-2xl font-bold text-xs flex items-center gap-2 hover:bg-[#2E1A8A] transition-all">
-                    <AlertCircle size={16} /> Registrar Falta
-                  </button>
+                  <div className="flex gap-3">
+                    <button onClick={downloadExcel} className="bg-amber-500 text-white px-6 py-3 rounded-2xl font-bold text-xs flex items-center gap-2 hover:bg-amber-600 transition-all shadow-md"><Download size={16} /> Descargar Reporte</button>
+                    <button onClick={() => entityType === 'docente' ? setShowAddAbsence(true) : setShowAddStudentAbsence(true)} className="bg-[#24157A] text-white px-6 py-3 rounded-2xl font-bold text-xs flex items-center gap-2 hover:bg-[#2E1A8A] transition-all">
+                      <AlertCircle size={16} /> Registrar Falta
+                    </button>
+                  </div>
                 </div>
                 <div className="overflow-x-auto rounded-2xl border border-gray-100">
                   <table className="w-full text-left border-collapse">
