@@ -147,6 +147,8 @@ async function initDb() {
         try {
           await pool.query(`ALTER TABLE students ADD COLUMN IF NOT EXISTS parent_phone TEXT;`);
           await pool.query(`ALTER TABLE students ADD COLUMN IF NOT EXISTS schedule TEXT DEFAULT '{}';`);
+          await pool.query(`ALTER TABLE attendance ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'PUNTUAL';`);
+          await pool.query(`ALTER TABLE student_attendance ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'PUNTUAL';`);
         } catch (e) {
           console.warn("Aviso al actualizar columnas de estudiantes:", e.message);
         }
@@ -316,10 +318,10 @@ async function startServer() {
     const teacherId = rawId?.toString().trim();
 
     try {
-      await pool.query("INSERT INTO attendance (teacher_id, type, date, time, status) VALUES ($1, $2, $3, $4, $5)", [teacherId, type, manualDate, manualTime, status]);
+      await pool.query("INSERT INTO attendance (teacher_id, type, date, time, status) VALUES ($1, $2, $3, $4, $5)", [teacherId, type, manualDate, manualTime, status || 'PUNTUAL']);
       res.json({ success: true });
     } catch (e: any) {
-      console.error("❌ Error en asistencia docente:", e.message);
+      console.error("❌ Error en asistencia docente:", e);
       if (e.message.includes('UNIQUE') || e.message.includes('duplicate')) {
         return res.status(400).json({ error: `El docente ya registró su ${type} el día de hoy.` });
       }
@@ -344,7 +346,7 @@ async function startServer() {
       await pool.query("INSERT INTO student_attendance (student_id, type, date, time, status) VALUES ($1, $2, $3, $4, $5)", [studentId, type, date, time, status || 'PUNTUAL']);
       res.json({ success: true, studentName: `${student.rows[0].first_name} ${student.rows[0].last_name}` });
     } catch (e: any) {
-      console.error("❌ Error en asistencia estudiante:", e.message);
+      console.error("❌ Error en asistencia estudiante:", e);
       if (e.message.includes('UNIQUE') || e.message.includes('duplicate')) {
         return res.status(400).json({ error: `El estudiante ya registró su ${type} el día de hoy.` });
       }
