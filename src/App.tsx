@@ -245,11 +245,11 @@ export default function App() {
     if (isInitializingRef.current) return;
     isInitializingRef.current = true;
     try {
-      // Verificamos que el elemento existe antes de proceder
-      await new Promise(r => setTimeout(r, 100));
+      // Espera más larga para asegurar que el DOM esté listo y evitar pantalla blanca
+      await new Promise(r => setTimeout(r, 300));
       const element = document.getElementById("reader");
       
-      if (!element || activeTab !== 'asistencia') {
+      if (!element || activeTab !== 'asistencia' || mode !== 'scan') {
         isInitializingRef.current = false;
         return;
       }
@@ -257,14 +257,13 @@ export default function App() {
       setScannerError(null);
       await stopScanner();
 
-      scannerRef.current = new Html5Qrcode("reader", { 
-        formatsToSupport: [ Html5QrcodeSupportedFormats.QR_CODE ],
-        verbose: false 
-      });
+      // Inicialización simple para evitar fallos de compatibilidad
+      const scanner = new Html5Qrcode("reader", { verbose: false });
+      scannerRef.current = scanner;
 
       const config = {
-        fps: 15, 
-        qrbox: { width: 250, height: 250 },
+        fps: 20, // Más FPS para rapidez
+        qrbox: { width: 260, height: 260 },
         aspectRatio: 1.0
       };
 
@@ -272,24 +271,20 @@ export default function App() {
         { facingMode: "environment" },
         config,
         (text) => {
+          if (activeTab !== 'asistencia') return;
           const now = Date.now();
-          // Reducido a 2 segundos de cooldown para mayor agilidad
           if (lastScannedRef.current.id === text && (now - lastScannedRef.current.time) < 2000) return;
           lastScannedRef.current = { id: text, time: now };
           
           if ('vibrate' in navigator) navigator.vibrate(200);
-          if (entityType === 'docente') {
-            handleAttendance(text);
-          } else {
-            handleStudentAttendance(text);
-          }
+          entityType === 'docente' ? handleAttendance(text) : handleStudentAttendance(text);
         },
-        () => {}
+        () => { /* ignorar errores silenciosos */ }
       );
       
-      // Solo activamos si el componente sigue montado
-      setIsCameraActive(true);
-
+      if (document.getElementById("reader")) {
+        setIsCameraActive(true);
+      }
     } catch (err) {
       console.error("Scanner error:", err);
       setIsCameraActive(false);
@@ -972,7 +967,7 @@ export default function App() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
-                    {Array.isArray(teachers) && teachers.map(t => (
+                    {Array.isArray(teachers) && teachers.filter(Boolean).map(t => (
                       <tr key={t.id} className="hover:bg-slate-50/50 transition-colors">
                         <td className="p-6">
                           <p className="font-bold text-slate-800">{t.first_name} {t.last_name}</p>
@@ -1014,7 +1009,7 @@ export default function App() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
-                    {Array.isArray(students) && students.map(s => (
+                    {Array.isArray(students) && students.filter(Boolean).map(s => (
                       <tr key={s.id} className="hover:bg-slate-50/50 transition-colors">
                         <td className="p-6">
                           <p className="font-bold text-slate-800">{s.last_name}, {s.first_name}</p>

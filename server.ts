@@ -257,15 +257,22 @@ async function startServer() {
   app.post("/api/students", async (req, res) => {
     const { id, first_name, last_name, grade_section, parent_phone, schedule } = req.body;
     
-    if (!id || !first_name || !last_name) {
+    // Limpieza y validación estricta de campos
+    const cleanId = id?.toString().trim();
+    const cleanFirstName = first_name?.toString().trim();
+    const cleanLastName = last_name?.toString().trim();
+
+    if (!cleanId || !cleanFirstName || !cleanLastName) {
       return res.status(400).json({ error: "El ID, Nombres y Apellidos son obligatorios." });
     }
 
     try {
       const scheduleStr = schedule ? JSON.stringify(schedule) : '{}';
+      
+      // Usamos el ID limpio para evitar espacios que rompan la base de datos
       await pool.query(
         "INSERT INTO students (id, first_name, last_name, grade_section, parent_phone, schedule) VALUES ($1, $2, $3, $4, $5, $6)", 
-        [id, first_name, last_name, grade_section || '', parent_phone || '', scheduleStr]
+        [cleanId, cleanFirstName, cleanLastName, grade_section || '', parent_phone || '', scheduleStr]
       );
       res.json({ success: true });
     } catch (e: any) { 
@@ -273,9 +280,14 @@ async function startServer() {
       console.error("❌ Error en DB al registrar estudiante:", errorMsg);
       
       const isDuplicate = errorMsg.toLowerCase().includes('unique') || errorMsg.toLowerCase().includes('duplicate');
+      const isRLS = errorMsg.toLowerCase().includes('policy') || errorMsg.toLowerCase().includes('permission');
       
+      if (isRLS) {
+        return res.status(403).json({ error: "Error de permisos en Supabase (RLS). Por favor, deshabilite RLS o cree una política de acceso." });
+      }
+
       res.status(400).json({ 
-        error: isDuplicate ? "Este ID/DNI ya pertenece a otro estudiante." : "Error al guardar: Verifique que todos los campos sean correctos." 
+        error: isDuplicate ? "Este ID/DNI ya pertenece a otro estudiante." : `Error: ${errorMsg}` 
       }); 
     }
   });
