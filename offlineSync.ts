@@ -96,27 +96,29 @@ export async function registerAbsence(absenceData: any) {
 /**
  * Registra asistencia de estudiante con soporte offline.
  */
-export async function registerStudentAttendance(studentId: string, type: 'ENTRADA' | 'SALIDA') {
+export async function registerStudentAttendance(studentId: string, type: 'ENTRADA' | 'SALIDA', status: string = 'PUNTUAL') {
+  const now = new Date();
   const attendanceData = {
     studentId,
     type,
-    offlineId: Math.random().toString(36).slice(2)
+    manualDate: new Intl.DateTimeFormat('en-CA', { 
+      year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'America/Lima' 
+    }).format(now),
+    manualTime: new Intl.DateTimeFormat('en-GB', { 
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false, timeZone: 'America/Lima' 
+    }).format(now),
+    status,
+    offlineId: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2)
   };
 
   try {
-    const res = await fetch('/api/student-attendance', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(attendanceData),
-    });
-    const data = await res.json();
-    if (!res.ok) return { success: false, error: data.error || 'Error en el servidor' };
-    return data;
+    return await safeFetch('/api/student-attendance', attendanceData);
   } catch (error) {
+    console.warn("⚠️ Sin conexión (Estudiante). Guardando localmente...");
     const pending = JSON.parse(localStorage.getItem(STUDENT_ATTENDANCE_KEY) || '[]');
     pending.push(attendanceData);
     localStorage.setItem(STUDENT_ATTENDANCE_KEY, JSON.stringify(pending));
-    return { success: true, offline: true };
+    return { success: true, offline: true, studentName: "Guardado localmente (Offline)" };
   }
 }
 

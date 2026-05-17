@@ -312,15 +312,28 @@ async function startServer() {
 
   // --- ASISTENCIA ---
   app.post("/api/attendance", async (req, res) => {
-    const { teacherId, type, manualDate, manualTime, status } = req.body;
+    const { teacherId: rawId, type, manualDate, manualTime, status } = req.body;
+    const teacherId = rawId?.toString().trim();
+
     try {
       await pool.query("INSERT INTO attendance (teacher_id, type, date, time, status) VALUES ($1, $2, $3, $4, $5)", [teacherId, type, manualDate, manualTime, status]);
       res.json({ success: true });
-    } catch (e) { res.status(500).json({ error: "Error al registrar" }); }
+    } catch (e: any) {
+      console.error("❌ Error en asistencia docente:", e.message);
+      if (e.message.includes('UNIQUE') || e.message.includes('duplicate')) {
+        return res.status(400).json({ error: `El docente ya registró su ${type} el día de hoy.` });
+      }
+      if (e.message.includes('foreign key')) {
+        return res.status(404).json({ error: "ID de docente no encontrado en la base de datos." });
+      }
+      res.status(500).json({ error: "Error interno al registrar asistencia." });
+    }
   });
 
   app.post("/api/student-attendance", async (req, res) => {
-    const { studentId, type, manualDate, manualTime, status } = req.body;
+    const { studentId: rawId, type, manualDate, manualTime, status } = req.body;
+    const studentId = rawId?.toString().trim();
+
     try {
       const student = await pool.query("SELECT first_name, last_name FROM students WHERE id = $1", [studentId]);
       if (student.rows.length === 0) return res.status(404).json({ error: "No encontrado" });
@@ -330,7 +343,13 @@ async function startServer() {
 
       await pool.query("INSERT INTO student_attendance (student_id, type, date, time, status) VALUES ($1, $2, $3, $4, $5)", [studentId, type, date, time, status || 'PUNTUAL']);
       res.json({ success: true, studentName: `${student.rows[0].first_name} ${student.rows[0].last_name}` });
-    } catch (e) { res.status(500).json({ error: "Error" }); }
+    } catch (e: any) {
+      console.error("❌ Error en asistencia estudiante:", e.message);
+      if (e.message.includes('UNIQUE') || e.message.includes('duplicate')) {
+        return res.status(400).json({ error: `El estudiante ya registró su ${type} el día de hoy.` });
+      }
+      res.status(500).json({ error: "Error interno al registrar asistencia del alumno." });
+    }
   });
 
   // --- REPORTES Y FALTAS ---

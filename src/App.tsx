@@ -109,8 +109,8 @@ export default function App() {
     const today = last7Days[6];
     const totalMembers = (Array.isArray(teachers) ? teachers.length : 0) + (Array.isArray(students) ? students.length : 0);
     
-    const allRecords = Array.isArray(records) ? [...records, ...(Array.isArray(studentRecords) ? studentRecords : [])] : [];
-    const allAbsences = Array.isArray(absences) ? [...absences, ...(Array.isArray(studentAbsences) ? studentAbsences : [])] : [];
+    const allRecords = [...(Array.isArray(records) ? records : []), ...(Array.isArray(studentRecords) ? studentRecords : [])].filter(Boolean);
+    const allAbsences = [...(Array.isArray(absences) ? absences : []), ...(Array.isArray(studentAbsences) ? studentAbsences : [])].filter(Boolean);
 
     const attToday = allRecords.filter(r => r && r.date === today && r.type === 'ENTRADA').length;
     
@@ -710,7 +710,7 @@ export default function App() {
 
     const loading = toast.loading(`Registrando ${attendanceTypeRef.current}...`);
     try {
-      const data = await registerStudentAttendance(sid, attendanceTypeRef.current);
+      const data = await registerStudentAttendance(sid, attendanceTypeRef.current, calculatedStatus);
       if (data.success) {
         toast.success(`${data.studentName || 'Estudiante'}: ${attendanceTypeRef.current} ${calculatedStatus}`, { id: loading });
         setTeacherId('');
@@ -994,6 +994,7 @@ export default function App() {
                     <tr className="bg-slate-50 border-b border-gray-100">
                       <th className="p-6 text-[10px] font-black text-slate-400 uppercase">Estudiante</th>
                       <th className="p-6 text-[10px] font-black text-slate-400 uppercase">Grado / Sección</th>
+                      <th className="p-6 text-[10px] font-black text-slate-400 uppercase">Apoderado</th>
                       <th className="p-6 text-[10px] font-black text-slate-400 uppercase text-right">Acciones</th>
                     </tr>
                   </thead>
@@ -1005,6 +1006,7 @@ export default function App() {
                           <p className="text-xs font-mono text-slate-400">{s.id}</p>
                         </td>
                         <td className="p-6 font-bold text-slate-600 text-sm">{s.grade_section}</td>
+                        <td className="p-6 font-medium text-slate-500 text-sm">{s.parent_phone || 'S/N'}</td>
                         <td className="p-6 text-right flex justify-end gap-2">
                           <button onClick={() => setSelectedStudentQR(s)} className="p-3 text-slate-400 hover:text-[#59C65B]"><QrCode size={18} /></button>
                           <button onClick={() => handleDeleteStudent(s.id)} className="p-3 text-slate-400 hover:text-rose-600"><Trash2 size={18} /></button>
