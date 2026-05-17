@@ -118,7 +118,7 @@ export default function App() {
     const punctualCount = allRecords.filter(r => r && r.type === 'ENTRADA' && r.status === 'PUNTUAL').length;
     const punctualityRate = totalEntries > 0 ? ((punctualCount / totalEntries) * 100).toFixed(2) : "0.00";
 
-    const totalFaltas = allAbsences.length;
+    const totalFaltas = Array.isArray(allAbsences) ? allAbsences.length : 0;
     const totalPossible = totalEntries + totalFaltas;
     const absenceRate = totalPossible > 0 ? ((totalFaltas / totalPossible) * 100).toFixed(2) : "0.00";
 
@@ -223,20 +223,21 @@ export default function App() {
 
   // --- FUNCIONES DE QR (CARGA DINÁMICA) ---
   const stopScanner = async () => {
-    const scanner = scannerRef.current;
-    if (!scanner) return;
-    
-    try {
-      if (scanner.isScanning) {
-        await scanner.stop();
+    if (scannerRef.current) {
+      try {
+        if (scannerRef.current.isScanning) {
+          await scannerRef.current.stop();
+        }
+        // Pequeña pausa para asegurar liberación de hardware
+        await new Promise(r => setTimeout(r, 50));
+        scannerRef.current.clear();
+      } catch (e) { 
+        console.warn("Aviso al detener cámara:", e); 
+      } finally {
+        scannerRef.current = null;
+        setIsCameraActive(false);
+        isInitializingRef.current = false;
       }
-      scanner.clear();
-    } catch (e) { 
-      console.warn("Aviso al detener cámara:", e); 
-    } finally {
-      scannerRef.current = null;
-      setIsCameraActive(false);
-      isInitializingRef.current = false;
     }
   };
 
@@ -244,11 +245,11 @@ export default function App() {
     if (isInitializingRef.current) return;
     isInitializingRef.current = true;
     try {
-      // Reducimos el tiempo de espera para que la cámara abra instantáneamente
-      await new Promise(r => setTimeout(r, 50));
+      // Verificamos que el elemento existe antes de proceder
+      await new Promise(r => setTimeout(r, 100));
       const element = document.getElementById("reader");
       
-      if (!element || activeTab !== 'asistencia' || mode !== 'scan') {
+      if (!element || activeTab !== 'asistencia') {
         isInitializingRef.current = false;
         return;
       }
@@ -256,15 +257,14 @@ export default function App() {
       setScannerError(null);
       await stopScanner();
 
-      // OPTIMIZACIÓN DE VELOCIDAD: Solo soportar QR_CODE reduce el tiempo de arranque drásticamente
       scannerRef.current = new Html5Qrcode("reader", { 
         formatsToSupport: [ Html5QrcodeSupportedFormats.QR_CODE ],
         verbose: false 
       });
 
       const config = {
-        fps: 20, // Mayor FPS para detección inmediata
-        qrbox: { width: 260, height: 260 },
+        fps: 15, 
+        qrbox: { width: 250, height: 250 },
         aspectRatio: 1.0
       };
 
@@ -286,9 +286,10 @@ export default function App() {
         },
         () => {}
       );
-      if (document.getElementById("reader")) {
-        setIsCameraActive(true);
-      }
+      
+      // Solo activamos si el componente sigue montado
+      setIsCameraActive(true);
+
     } catch (err) {
       console.error("Scanner error:", err);
       setIsCameraActive(false);
@@ -927,8 +928,8 @@ export default function App() {
                 </div>
                 <div className="p-10">
                   {mode === 'scan' ? (
-                    <div className="space-y-4" key={`scanner-${activeTab}`}>
-                      <div id="reader" className="w-full aspect-square bg-black rounded-[2.5rem] border-4 border-dashed border-slate-200 overflow-hidden relative">
+                    <div className="space-y-4" key="scanner-container">
+                      <div id="reader" className="w-full aspect-square bg-slate-900 rounded-[2.5rem] border-4 border-dashed border-slate-700 overflow-hidden relative shadow-inner">
                       {!isCameraActive && (
                         <button type="button" onClick={startScanner} className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-white/80 hover:bg-white transition-colors z-10">
                           <Camera size={40} className="text-[#24157A]" />
