@@ -29,6 +29,7 @@ import { StudentModal } from './StudentModal';
 import { AbsenceModal } from './AbsenceModal';
 import { QRModal } from './QRModal';
 import { exportToExcel, prepareExportData } from './excelService';
+import { exportToPDF } from './pdfService';
 
 export default function App() {
   const [adminUser, setAdminUser] = useState<{username: string, name: string} | null>(() => {
@@ -496,6 +497,30 @@ export default function App() {
     } catch (error) {
       toast.error('Error al generar Excel', { id: loading });
     }
+  };
+
+  const downloadPDF = () => {
+    const isDocente = entityType === 'docente';
+    const absences = isDocente ? combinedAbsences : combinedStudentAbsences;
+    const justifiedAbsences = absences.filter(a => a.status === 'JUSTIFICADA');
+
+    if (justifiedAbsences.length === 0) {
+      toast.error('No hay faltas justificadas para este periodo');
+      return;
+    }
+
+    const data = justifiedAbsences.map(a => ({
+      'Nombre': (a.teacher_name || a.student_name || '').toUpperCase(),
+      'ID/DNI': a.teacher_id || a.student_id,
+      'Fecha': a.date,
+      'Motivo': a.reason || 'Sin motivo'
+    }));
+
+    exportToPDF(
+      data,
+      `Reporte de Faltas Justificadas - ${isDocente ? 'Docentes' : 'Estudiantes'} (${reportMonth})`,
+      `Faltas_Justificadas_${reportMonth}`
+    );
   };
 
   // Procesa datos de estudiantes (Servidor + Offline)
@@ -1064,6 +1089,7 @@ export default function App() {
                   <div className="flex gap-3">
                     <input type="month" value={reportMonth} onChange={(e) => setReportMonth(e.target.value)} className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-xs outline-none" />
                     <button onClick={downloadExcel} className="bg-[#59C65B] text-white px-6 py-2 rounded-xl font-bold text-xs flex items-center gap-2 hover:bg-[#6EDB63] transition-all shadow-md"><Download size={16} /> Exportar</button>
+                    <button onClick={downloadPDF} className="bg-rose-600 text-white px-6 py-2 rounded-xl font-bold text-xs flex items-center gap-2 hover:bg-rose-700 transition-all shadow-md"><FileText size={16} /> PDF</button>
                   </div>
                 </div>
                 <div className="overflow-x-auto rounded-2xl border border-gray-100">
