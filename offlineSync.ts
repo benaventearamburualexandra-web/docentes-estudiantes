@@ -77,14 +77,7 @@ export async function registerTeacher(teacherData: any) {
  */
 export async function registerAbsence(absenceData: any) {
   try {
-    const res = await fetch('/api/absences', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(absenceData),
-    });
-    const data = await res.json();
-    if (!res.ok) return { success: false, error: data.error || 'Error en el servidor' };
-    return data;
+    return await safeFetch('/api/absences', absenceData);
   } catch (error) {
     const pending = JSON.parse(localStorage.getItem(ABSENCES_KEY) || '[]');
     pending.push(absenceData);
@@ -119,6 +112,17 @@ export async function registerStudentAttendance(studentId: string, type: 'ENTRAD
     pending.push(attendanceData);
     localStorage.setItem(STUDENT_ATTENDANCE_KEY, JSON.stringify(pending));
     return { success: true, offline: true, studentName: "Guardado localmente (Offline)" };
+  }
+}
+
+export async function registerStudentAbsence(absenceData: any) {
+  try {
+    return await safeFetch('/api/student-absences', absenceData);
+  } catch (error) {
+    const pending = JSON.parse(localStorage.getItem('pending_student_absences') || '[]');
+    pending.push(absenceData);
+    localStorage.setItem('pending_student_absences', JSON.stringify(pending));
+    return { success: true, offline: true };
   }
 }
 

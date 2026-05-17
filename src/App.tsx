@@ -16,7 +16,8 @@ import {
   registerTeacher, 
   registerAbsence,
   registerStudent,
-  registerStudentAttendance 
+  registerStudentAttendance,
+  registerStudentAbsence
 } from '../offlineSync';
 
 import { Teacher, Student, AttendanceRecord, AbsenceRecord } from '../index';
@@ -793,10 +794,24 @@ export default function App() {
     e.preventDefault();
     const loading = toast.loading('Guardando...');
     try {
-      const data = await registerAbsence(newAbsence);
+      let data;
+      if (newAbsence.id) {
+        // Modo edición
+        const res = await fetch(`/api/absences/${newAbsence.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(newAbsence)
+        });
+        data = await res.json();
+      } else {
+        // Modo nuevo
+        data = await registerAbsence(newAbsence);
+      }
+
       if (data.success) {
-        toast.success('Falta registrada', { id: loading });
+        toast.success(newAbsence.id ? 'Falta actualizada' : 'Falta registrada', { id: loading });
         setShowAddAbsence(false);
+        setNewAbsence({ teacherId: '', date: new Date().toISOString().split('T')[0], status: 'INJUSTIFICADA', reason: '' });
         fetchData();
       }
     } catch (e) { toast.error('Error al registrar', { id: loading }); }
@@ -806,14 +821,22 @@ export default function App() {
     e.preventDefault();
     const loading = toast.loading('Guardando...');
     try {
-      const res = await fetch('/api/student-absences', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newStudentAbsence)
-      });
-      if (res.ok) {
-        toast.success('Falta registrada', { id: loading });
+      let data;
+      if (newStudentAbsence.id) {
+        const res = await fetch(`/api/student-absences/${newStudentAbsence.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(newStudentAbsence)
+        });
+        data = await res.json();
+      } else {
+        data = await registerStudentAbsence(newStudentAbsence);
+      }
+
+      if (data.success || data.offline) {
+        toast.success(newStudentAbsence.id ? 'Falta actualizada' : 'Falta registrada', { id: loading });
         setShowAddStudentAbsence(false);
+        setNewStudentAbsence({ studentId: '', date: new Date().toISOString().split('T')[0], status: 'INJUSTIFICADA', reason: '' });
         fetchData();
       }
     } catch (e) { toast.error('Error', { id: loading }); }
@@ -1104,7 +1127,16 @@ export default function App() {
                           </td>
                           <td className="p-4 text-slate-500 text-xs italic">{a.reason || 'Sin motivo'}</td>
                           <td className="p-4 text-right">
+                          <div className="flex justify-end gap-2">
+                            <button 
+                              onClick={() => {
+                                if (entityType === 'docente') { setNewAbsence(a); setShowAddAbsence(true); } 
+                                else { setNewStudentAbsence(a); setShowAddStudentAbsence(true); }
+                              }} 
+                              className="text-indigo-400 hover:text-indigo-600 transition-colors"
+                            ><Settings size={16} /></button>
                             <button onClick={() => deleteAbsence(a.id)} className="text-rose-400 hover:text-rose-600"><Trash2 size={16} /></button>
+                          </div>
                           </td>
                         </tr>
                       ))}

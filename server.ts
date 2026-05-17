@@ -391,6 +391,24 @@ async function startServer() {
     } catch (e) { res.status(500).json({ error: "Error" }); }
   });
 
+  app.put("/api/absences/:id", async (req, res) => {
+    const { id } = req.params;
+    const { status, reason } = req.body;
+    try {
+      await pool.query("UPDATE absences SET status = $1, reason = $2 WHERE id = $3", [status, reason, id]);
+      res.json({ success: true });
+    } catch (e) { res.status(500).json({ error: "Error al actualizar falta docente" }); }
+  });
+
+  app.put("/api/student-absences/:id", async (req, res) => {
+    const { id } = req.params;
+    const { status, reason } = req.body;
+    try {
+      await pool.query("UPDATE student_absences SET status = $1, reason = $2 WHERE id = $3", [status, reason, id]);
+      res.json({ success: true });
+    } catch (e) { res.status(500).json({ error: "Error al actualizar falta estudiante" }); }
+  });
+
   app.post("/api/student-absences", async (req, res) => {
     const { studentId, date, status, reason } = req.body;
     try {
