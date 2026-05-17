@@ -11,7 +11,9 @@ body {
 }
 
 #reader video {
-  @apply rounded-3xl object-cover;
+  @apply rounded-3xl object-cover !important;
+  width: 100% !important;
+  height: 100% !important;
 }
 
 #reader__scan_region {

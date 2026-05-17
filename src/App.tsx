@@ -230,18 +230,22 @@ export default function App() {
     setScannerError(null);
 
     try {
-      if (scannerRef.current) { try { await scannerRef.current.stop(); } catch (e) {} }
+      if (scannerRef.current) {
+        try {
+          if (scannerRef.current.isScanning) await scannerRef.current.stop();
+          scannerRef.current.clear();
+        } catch (e) {}
+      }
+
       // Si el usuario ya cambió de pestaña mientras cargaba el módulo, abortamos
       if (activeTab !== 'asistencia') return;
 
       scannerRef.current = new Html5Qrcode("reader");
 
       const config = {
-        fps: 30, // Aumentamos a 30 FPS para detección ultra rápida
+        fps: 10, // 10 FPS es suficiente y consume menos recursos
         qrbox: { width: 250, height: 250 }, // Caja fija para evitar cálculos costosos
-        aspectRatio: 1.0,
-        formatsToSupport: [ Html5QrcodeSupportedFormats.QR_CODE ], // Solo buscar QRs
-        experimentalFeatures: { useBarCodeDetectorIfSupported: true } // Usa aceleración nativa si existe
+        aspectRatio: 1.0
       };
 
       await scannerRef.current.start(
@@ -378,9 +382,9 @@ export default function App() {
       return;
     }
 
-    const timer = setTimeout(() => startScanner(), 100);
+    const timer = setTimeout(() => startScanner(), 500); // Damos un poco más de tiempo al DOM
     return () => clearTimeout(timer);
-  }, [activeTab, mode, isOnline]); // Añadido isOnline para re-intentar si vuelve la red
+  }, [activeTab, mode]); // Eliminamos isOnline para evitar reinicios innecesarios
 
   const fetchData = async (showLoader = false, retries = 0) => {
     if (!navigator.onLine && window.location.hostname !== 'localhost') {
