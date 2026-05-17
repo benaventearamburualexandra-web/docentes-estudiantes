@@ -27,6 +27,7 @@ import { TeacherModal } from './TeacherModal';
 import { StudentModal } from './StudentModal';
 import { AbsenceModal } from './AbsenceModal';
 import { QRModal } from './QRModal';
+import { exportToExcel, prepareExportData } from './services/excelService';
 
 export default function App() {
   const [adminUser, setAdminUser] = useState<{username: string, name: string} | null>(() => {
@@ -463,46 +464,65 @@ export default function App() {
   const downloadExcel = async () => {
     const loading = toast.loading('Generando reporte Excel...');
     try {
-      // Elegir qué datos exportar según la pestaña activa o el tipo de entidad seleccionado
       const isDocente = entityType === 'docente';
-      const recordsToExport = isDocente ? combinedRecords : studentRecords;
-      const absencesToExport = isDocente ? combinedAbsences : studentAbsences;
+      const recordsToExport = isDocente ? combinedRecords : combinedStudentRecords;
+      const absencesToExport = isDocente ? combinedAbsences : combinedStudentAbsences;
 
-      const safeRecords = Array.isArray(recordsToExport) ? recordsToExport : [];
-      const safeAbsences = Array.isArray(absencesToExport) ? absencesToExport : [];
-
-      const data = [
-        ...safeRecords.map((r: any) => ({
-          'Categoría': isDocente ? 'DOCENTE' : 'ESTUDIANTE',
-          'Tipo': 'ASISTENCIA',
-          'Nombre': (r.teacher_name || r.student_name || 'DESCONOCIDO').toUpperCase(), 
-          'ID/DNI': r.teacher_id || r.student_id || '-', 
-          'Evento': r.type || 'S/D',
-          'Fecha': r.date || '-', 
-          'Hora': r.time || '-', 
-          'Estado': r.status || 'PUNTUAL'
-        })),
-        ...safeAbsences.map((a: any) => ({
-          'Categoría': isDocente ? 'DOCENTE' : 'ESTUDIANTE',
-          'Tipo': 'FALTA',
-          'Nombre': (a.teacher_name || a.student_name || 'Desconocido').toUpperCase(), 
-          'ID/DNI': a.teacher_id || a.student_id || '-', 
-          'Evento': a.status || 'INJUSTIFICADA',
-          'Fecha': a.date || '-', 
-          'Hora': '-', 
-          'Motivo': a.reason || 'Sin motivo'
-        }))
-      ].sort((a, b) => String(b.Fecha).localeCompare(String(a.Fecha)));
-
-      const ws = XLSX.utils.json_to_sheet(data);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Reporte");
-      XLSX.writeFile(wb, `Reporte_${isDocente ? 'Docentes' : 'Estudiantes'}_${reportMonth}.xlsx`);
+      const data = prepareExportData(recordsToExport, absencesToExport, isDocente);
+      exportToExcel(data, `Reporte_${isDocente ? 'Docentes' : 'Estudiantes'}_${reportMonth}`);
+      
       toast.success('Excel descargado', { id: loading });
     } catch (error) {
       toast.error('Error al generar Excel', { id: loading });
     }
   };
+
+  // Procesa datos de estudiantes (Servidor + Offline)
+  const combinedStudentRecords = useMemo(() => {
+    try {
+      if (!Array.isArray(students)) return [];
+      let pending = [];
+      try {
+        const raw = localStorage.getItem('pending_student_attendance');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) pending = parsed;
+        }
+      } catch (e) { pending = []; }
+
+      const studentMap = new Map(students.filter(s => s && s?.id).map(s => [s.id.toString(), s]));
+
+      const mappedPending = pending.map((item: any): AttendanceRecord | null => {
+        if (!item) return null;
+        const sId = item.studentId?.toString() || '';
+        const sObj = studentMap.get(sId);
+        return {
+          id: item.offlineId || Math.random().toString(),
+          student_name: sObj ? `${sObj.first_name} ${sObj.last_name}` : (sId || 'Desconocido'),
+          student_id: sId,
+          type: item.type || 'S/D',
+          date: item.manualDate || new Date().toISOString().split('T')[0],
+          time: item.manualTime || new Date().toLocaleTimeString('en-GB'),
+          status: item.status || 'PENDIENTE'
+        };
+      }).filter((r): r is AttendanceRecord => r !== null && !!r.student_id);
+
+      const allRecords = [...(Array.isArray(studentRecords) ? studentRecords : []), ...mappedPending];
+      return allRecords
+        .filter(r => r && r.date && (reportWeek ? isDateInWeek(r.date, reportWeek) : (reportMonth ? r.date.startsWith(reportMonth) : true)))
+        .sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.time || '').localeCompare(a.time || ''))
+        .slice(0, 100);
+    } catch (err) {
+      console.error("Error en combinedStudentRecords:", err);
+      return [];
+    }
+  }, [studentRecords, students, reportMonth, reportWeek, offlineTrigger]);
+
+  const combinedStudentAbsences = useMemo(() => {
+    return (Array.isArray(studentAbsences) ? studentAbsences : [])
+      .filter(a => a && a.date && (reportWeek ? isDateInWeek(a.date, reportWeek) : (reportMonth ? a.date.startsWith(reportMonth) : true)))
+      .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  }, [studentAbsences, reportMonth, reportWeek]);
 
   // --- LÓGICA DE DATOS COMBINADOS (OFFLINE + ONLINE) ---
   const combinedRecords = useMemo(() => {
@@ -734,6 +754,7 @@ export default function App() {
       const data = await registerStudent(newStudent);
       if (data.success) {
         toast.success('Estudiante registrado', { id: loading });
+        setSelectedStudentQR({ ...newStudent });
         setShowAddStudent(false);
         setNewStudent({ id: '', first_name: '', last_name: '', grade_section: '', parent_phone: '', schedule: INITIAL_SCHEDULE });
         fetchData();
