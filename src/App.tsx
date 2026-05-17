@@ -48,14 +48,25 @@ export default function App() {
   const [isWakingUp, setIsWakingUp] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [entityType, setEntityType] = useState<'docente' | 'estudiante'>('docente');
+  const entityTypeRef = useRef(entityType);
+
+  useEffect(() => {
+    entityTypeRef.current = entityType;
+  }, [entityType]);
 
   // Estados con carga de Caché Local inmediata
   const [teachers, setTeachers] = useState<Teacher[]>(() => {
     try { return JSON.parse(localStorage.getItem('cache_teachers') || '[]'); } catch (e) { return []; }
   });
+  const teachersRef = useRef(teachers);
+  useEffect(() => { teachersRef.current = teachers; }, [teachers]);
+
   const [students, setStudents] = useState<Student[]>(() => {
     try { return JSON.parse(localStorage.getItem('cache_students') || '[]'); } catch (e) { return []; }
   });
+  const studentsRef = useRef(students);
+  useEffect(() => { studentsRef.current = students; }, [students]);
+
   const [records, setRecords] = useState<AttendanceRecord[]>(() => {
     try { return JSON.parse(localStorage.getItem('cache_records') || '[]'); } catch (e) { return []; }
   });
@@ -266,7 +277,7 @@ export default function App() {
           lastScannedRef.current = { id: text, time: now };
           
           if ('vibrate' in navigator) navigator.vibrate(200);
-          entityType === 'docente' ? handleAttendance(text) : handleStudentAttendance(text);
+          entityTypeRef.current === 'docente' ? handleAttendance(text) : handleStudentAttendance(text);
         },
         () => {}
       );
@@ -623,7 +634,7 @@ export default function App() {
     let calculatedStatus = 'PUNTUAL';
     if (attendanceTypeRef.current === 'ENTRADA') {
       // 1. Buscamos en los docentes ya sincronizados
-      let teacher = teachers.find(t => t.id === tid);
+      let teacher = teachersRef.current.find(t => t.id === tid);
       
       // 2. MEJORA OFFLINE: Si no existe, buscamos en los docentes agregados offline 
       // que aún no se han subido al servidor.
@@ -695,7 +706,7 @@ export default function App() {
 
     let calculatedStatus = 'PUNTUAL';
     if (attendanceTypeRef.current === 'ENTRADA') {
-      const student = students.find(s => s.id === sid);
+      const student = studentsRef.current.find(s => s.id === sid);
       if (student?.schedule) {
         const now = new Date();
         const dayName = new Intl.DateTimeFormat('en-US', { weekday: 'long', timeZone: 'America/Lima' }).format(now).toLowerCase();
