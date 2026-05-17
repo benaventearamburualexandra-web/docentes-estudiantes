@@ -225,33 +225,40 @@ export default function App() {
   const stopScanner = async () => {
     if (!scannerRef.current) return;
     try {
-      // Intentamos detener el escaneo sin depender de isScanning para evitar errores de stream
-      try { await scannerRef.current.stop(); } catch(e) {}
+      await scannerRef.current.stop().catch(() => {});
       await scannerRef.current.clear();
-    } catch (e) { 
-      console.warn("Aviso al detener cámara:", e); 
     } finally {
       scannerRef.current = null;
       setIsCameraActive(false);
-      isInitializingRef.current = false;
     }
+    isInitializingRef.current = false;
   };
 
   const startScanner = async () => {
     if (isInitializingRef.current || scannerRef.current) return;
     isInitializingRef.current = true;
+    const element = document.getElementById("reader");
+    if (!element) { isInitializingRef.current = false; return; }
+    setScannerError(null);
+
     try {
-      const element = document.getElementById("reader");
-      if (!element || activeTab !== 'asistencia' || mode !== 'scan') {
-        isInitializingRef.current = false;
-        return;
-      }
-      setScannerError(null);
-      const scanner = new Html5Qrcode("reader", { verbose: false });
-      scannerRef.current = scanner;
-      await scanner.start(
+      if (scannerRef.current) { try { await scannerRef.current.stop(); } catch (e) {} }
+      // Si el usuario ya cambió de pestaña mientras cargaba el módulo, abortamos
+      if (activeTab !== 'asistencia') return;
+
+      scannerRef.current = new Html5Qrcode("reader");
+
+      const config = {
+        fps: 30, // Aumentamos a 30 FPS para detección ultra rápida
+        qrbox: { width: 250, height: 250 }, // Caja fija para evitar cálculos costosos
+        aspectRatio: 1.0,
+        formatsToSupport: [ Html5QrcodeSupportedFormats.QR_CODE ], // Solo buscar QRs
+        experimentalFeatures: { useBarCodeDetectorIfSupported: true } // Usa aceleración nativa si existe
+      };
+
+      await scannerRef.current.start(
         { facingMode: "environment" },
-        { fps: 20, qrbox: { width: 140, height: 140 }, aspectRatio: 1.0 },
+        config,
         (text) => {
           if (activeTab !== 'asistencia') return;
           const now = Date.now();
@@ -261,16 +268,16 @@ export default function App() {
           if ('vibrate' in navigator) navigator.vibrate(200);
           entityType === 'docente' ? handleAttendance(text) : handleStudentAttendance(text);
         },
-        () => { /* ignorar errores silenciosos */ }
+        () => {}
       );
       setIsCameraActive(true);
     } catch (err) {
-      console.error("Scanner error:", err);
+      setScannerError("Error al iniciar cámara. Verifica los permisos del navegador.");
       setIsCameraActive(false);
-      // Solo mostrar error si seguimos en la pestaña de asistencia
-      if (activeTab === 'asistencia') {
-        toast.error("Error al iniciar cámara. Reintente.", { icon: '📷' });
-      }
+      toast.error("No se pudo acceder a la cámara", {
+        icon: '📷',
+        style: { borderRadius: '15px', background: '#333', color: '#fff' }
+      });
     } finally { 
       isInitializingRef.current = false; 
     }
@@ -904,11 +911,12 @@ export default function App() {
                 </div>
                 <div className="p-10">
                   {mode === 'scan' ? (
-                    <div className="space-y-4">
-                      <div id="reader" className="w-full max-w-[250px] mx-auto aspect-square bg-slate-900 rounded-[2.5rem] border-4 border-dashed border-slate-700 relative shadow-inner overflow-hidden">
+                    <div className="flex flex-col items-center">
+                      <div className="w-full max-w-xs aspect-square bg-slate-50 rounded-[2.5rem] border-4 border-dashed border-slate-200 overflow-hidden relative">
+                        <div id="reader" className="w-full h-full"></div>
                         {!isCameraActive && (
-                          <button type="button" onClick={startScanner} className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-white/80 hover:bg-white transition-colors z-10">
-                            <Camera size={40} className="text-[#24157A]" />
+                          <button onClick={startScanner} className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-white/80 hover:bg-white transition-colors" aria-label="Activar cámara para escanear QR">
+                            <Camera size={40} className="text-indigo-600" />
                             <span className="font-bold text-gray-700">Activar Cámara</span>
                           </button>
                         )}
