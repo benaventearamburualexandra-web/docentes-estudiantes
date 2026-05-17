@@ -222,6 +222,19 @@ export default function App() {
   }, []);
 
   // --- FUNCIONES DE QR (CARGA DINÁMICA) ---
+  const stopScanner = async () => {
+    if (scannerRef.current) {
+      try {
+        if (scannerRef.current.isScanning) {
+          await scannerRef.current.stop();
+        }
+        scannerRef.current.clear();
+      } catch (e) { console.error("Error stopping scanner:", e); }
+      scannerRef.current = null;
+      setIsCameraActive(false);
+    }
+  };
+
   const startScanner = async () => {
     if (isInitializingRef.current) return;
     isInitializingRef.current = true;
@@ -230,12 +243,7 @@ export default function App() {
     setScannerError(null);
 
     try {
-      if (scannerRef.current) {
-        try {
-          if (scannerRef.current.isScanning) await scannerRef.current.stop();
-          scannerRef.current.clear();
-        } catch (e) {}
-      }
+      await stopScanner();
 
       // Si el usuario ya cambió de pestaña mientras cargaba el módulo, abortamos
       if (activeTab !== 'asistencia') return;
@@ -374,16 +382,15 @@ export default function App() {
   useEffect(() => {
     // Si no estamos en asistencia/scan, apagamos la cámara inmediatamente
     if (activeTab !== 'asistencia' || mode !== 'scan') {
-      if (scannerRef.current) {
-        scannerRef.current.stop().catch(() => {});
-        scannerRef.current = null;
-      }
-      setIsCameraActive(false);
+      stopScanner();
       return;
     }
 
     const timer = setTimeout(() => startScanner(), 500); // Damos un poco más de tiempo al DOM
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      stopScanner();
+    };
   }, [activeTab, mode]); // Eliminamos isOnline para evitar reinicios innecesarios
 
   const fetchData = async (showLoader = false, retries = 0) => {
@@ -895,8 +902,169 @@ export default function App() {
             </motion.div>
           )}
 
-          {/* Aquí irían las listas de Docentes, Estudiantes, Faltas y Reportes (Tablas) */}
-          {/* Por brevedad, las tablas se mantienen con el diseño anterior pero dentro de sus respectivos {activeTab === '...' && (...)} */}
+          {activeTab === 'docentes' && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
+              <div className="flex justify-between items-center bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
+                <h2 className="text-2xl font-black text-slate-800">Personal Docente</h2>
+                <button onClick={() => setShowAddTeacher(true)} className="bg-[#24157A] text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 hover:bg-[#2E1A8A] transition-all">
+                  <UserPlus size={20} /> Nuevo Docente
+                </button>
+              </div>
+              <div className="bg-white rounded-[2.5rem] border border-[#D9D9D9] overflow-hidden shadow-xl">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-gray-100">
+                      <th className="p-6 text-[10px] font-black text-slate-400 uppercase">Docente</th>
+                      <th className="p-6 text-[10px] font-black text-slate-400 uppercase">Cargo</th>
+                      <th className="p-6 text-[10px] font-black text-slate-400 uppercase text-right">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {teachers.map(t => (
+                      <tr key={t.id} className="hover:bg-slate-50/50 transition-colors">
+                        <td className="p-6">
+                          <p className="font-bold text-slate-800">{t.first_name} {t.last_name}</p>
+                          <p className="text-xs font-mono text-slate-400">{t.id}</p>
+                        </td>
+                        <td className="p-6">
+                          <span className="px-3 py-1 bg-indigo-50 text-[#24157A] text-[10px] font-black rounded-full border border-indigo-100">{t.specialty}</span>
+                        </td>
+                        <td className="p-6 text-right">
+                          <div className="flex justify-end gap-2">
+                            <button onClick={() => setSelectedTeacherQR(t)} className="p-3 text-slate-400 hover:text-[#24157A]"><QrCode size={18} /></button>
+                            <button onClick={() => { setEditingTeacher(t); setShowEditTeacher(true); }} className="p-3 text-slate-400 hover:text-[#24157A]"><Settings size={18} /></button>
+                            <button onClick={() => handleDeleteTeacher(t.id)} className="p-3 text-slate-400 hover:text-rose-600"><Trash2 size={18} /></button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </motion.div>
+          )}
+
+          {activeTab === 'estudiantes' && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
+              <div className="flex justify-between items-center bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
+                <h2 className="text-2xl font-black text-slate-800">Alumnado</h2>
+                <button onClick={() => setShowAddStudent(true)} className="bg-[#59C65B] text-white px-6 py-3 rounded-2xl font-bold flex items-center gap-2 hover:bg-[#6EDB63] transition-all">
+                  <UserPlus size={20} /> Nuevo Estudiante
+                </button>
+              </div>
+              <div className="bg-white rounded-[2.5rem] border border-[#D9D9D9] overflow-hidden shadow-xl">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-gray-100">
+                      <th className="p-6 text-[10px] font-black text-slate-400 uppercase">Estudiante</th>
+                      <th className="p-6 text-[10px] font-black text-slate-400 uppercase">Grado / Sección</th>
+                      <th className="p-6 text-[10px] font-black text-slate-400 uppercase text-right">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {students.map(s => (
+                      <tr key={s.id} className="hover:bg-slate-50/50 transition-colors">
+                        <td className="p-6">
+                          <p className="font-bold text-slate-800">{s.last_name}, {s.first_name}</p>
+                          <p className="text-xs font-mono text-slate-400">{s.id}</p>
+                        </td>
+                        <td className="p-6 font-bold text-slate-600 text-sm">{s.grade_section}</td>
+                        <td className="p-6 text-right flex justify-end gap-2">
+                          <button onClick={() => setSelectedStudentQR(s)} className="p-3 text-slate-400 hover:text-[#59C65B]"><QrCode size={18} /></button>
+                          <button onClick={() => handleDeleteStudent(s.id)} className="p-3 text-slate-400 hover:text-rose-600"><Trash2 size={18} /></button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </motion.div>
+          )}
+
+          {activeTab === 'reportes' && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
+              <div className="bg-white p-8 rounded-[2.5rem] border border-[#D9D9D9] shadow-xl space-y-6">
+                <div className="flex flex-col md:flex-row justify-between gap-4">
+                  <div className="flex bg-slate-100 p-1 rounded-2xl w-fit">
+                    <button onClick={() => setEntityType('docente')} className={`px-6 py-2 rounded-xl font-bold text-xs transition-all ${entityType === 'docente' ? 'bg-white text-[#24157A] shadow-sm' : 'text-slate-500'}`}>Docentes</button>
+                    <button onClick={() => setEntityType('estudiante')} className={`px-6 py-2 rounded-xl font-bold text-xs transition-all ${entityType === 'estudiante' ? 'bg-white text-[#24157A] shadow-sm' : 'text-slate-500'}`}>Estudiantes</button>
+                  </div>
+                  <div className="flex gap-3">
+                    <input type="month" value={reportMonth} onChange={(e) => setReportMonth(e.target.value)} className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-xs outline-none" />
+                    <button onClick={downloadExcel} className="bg-[#59C65B] text-white px-6 py-2 rounded-xl font-bold text-xs flex items-center gap-2 hover:bg-[#6EDB63] transition-all shadow-md"><Download size={16} /> Exportar</button>
+                  </div>
+                </div>
+                <div className="overflow-x-auto rounded-2xl border border-gray-100">
+                  <table className="w-full text-left border-collapse">
+                    <thead className="bg-slate-50">
+                      <tr>
+                        <th className="p-4 text-[10px] font-black text-slate-400 uppercase">Nombre</th>
+                        <th className="p-4 text-[10px] font-black text-slate-400 uppercase">Evento</th>
+                        <th className="p-4 text-[10px] font-black text-slate-400 uppercase">Fecha / Hora</th>
+                        <th className="p-4 text-[10px] font-black text-slate-400 uppercase">Estado</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {(entityType === 'docente' ? combinedRecords : combinedStudentRecords).map((r: any) => (
+                        <tr key={r.id} className="text-sm">
+                          <td className="p-4 font-bold text-slate-800">{r.teacher_name || r.student_name}</td>
+                          <td className="p-4 font-black text-[10px] uppercase text-slate-500">{r.type}</td>
+                          <td className="p-4 text-slate-500">{r.date} <span className="font-mono text-xs opacity-60">{r.time}</span></td>
+                          <td className="p-4">
+                            <span className={`px-2 py-1 rounded-md text-[10px] font-black ${r.status === 'TARDE' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>{r.status}</span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          {activeTab === 'faltas' && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
+              <div className="bg-white p-8 rounded-[2.5rem] border border-[#D9D9D9] shadow-xl space-y-6">
+                <div className="flex justify-between items-center">
+                  <div className="flex bg-slate-100 p-1 rounded-2xl w-fit">
+                    <button onClick={() => setEntityType('docente')} className={`px-6 py-2 rounded-xl font-bold text-xs transition-all ${entityType === 'docente' ? 'bg-white text-[#24157A] shadow-sm' : 'text-slate-500'}`}>Docentes</button>
+                    <button onClick={() => setEntityType('estudiante')} className={`px-6 py-2 rounded-xl font-bold text-xs transition-all ${entityType === 'estudiante' ? 'bg-white text-[#24157A] shadow-sm' : 'text-slate-500'}`}>Estudiantes</button>
+                  </div>
+                  <button onClick={() => entityType === 'docente' ? setShowAddAbsence(true) : setShowAddStudentAbsence(true)} className="bg-[#24157A] text-white px-6 py-3 rounded-2xl font-bold text-xs flex items-center gap-2 hover:bg-[#2E1A8A] transition-all">
+                    <AlertCircle size={16} /> Registrar Falta
+                  </button>
+                </div>
+                <div className="overflow-x-auto rounded-2xl border border-gray-100">
+                  <table className="w-full text-left border-collapse">
+                    <thead className="bg-slate-50">
+                      <tr>
+                        <th className="p-4 text-[10px] font-black text-slate-400 uppercase">Nombre</th>
+                        <th className="p-4 text-[10px] font-black text-slate-400 uppercase">Fecha</th>
+                        <th className="p-4 text-[10px] font-black text-slate-400 uppercase">Estado</th>
+                        <th className="p-4 text-[10px] font-black text-slate-400 uppercase">Motivo</th>
+                        <th className="p-4 text-right"></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {(entityType === 'docente' ? combinedAbsences : combinedStudentAbsences).map((a: any) => (
+                        <tr key={a.id} className="text-sm">
+                          <td className="p-4 font-bold text-slate-800">{a.teacher_name || a.student_name}</td>
+                          <td className="p-4 text-slate-500">{a.date}</td>
+                          <td className="p-4">
+                            <span className={`px-2 py-1 rounded-md text-[10px] font-black ${a.status === 'JUSTIFICADA' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>{a.status}</span>
+                          </td>
+                          <td className="p-4 text-slate-500 text-xs italic">{a.reason || 'Sin motivo'}</td>
+                          <td className="p-4 text-right">
+                            <button onClick={() => deleteAbsence(a.id)} className="text-rose-400 hover:text-rose-600"><Trash2 size={16} /></button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </motion.div>
+          )}
         </div>
       </main>
 
