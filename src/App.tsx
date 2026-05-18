@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import * as XLSX from 'xlsx';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import { Toaster, toast } from 'react-hot-toast';
 import { 
@@ -28,8 +27,6 @@ import { TeacherModal } from './TeacherModal';
 import { StudentModal } from './StudentModal';
 import { AbsenceModal } from './AbsenceModal';
 import { QRModal } from './QRModal';
-import { exportToExcel, prepareExportData } from './excelService';
-import { exportToPDF } from './pdfService';
 
 export default function App() {
   const [adminUser, setAdminUser] = useState<{username: string, name: string} | null>(() => {
@@ -486,6 +483,8 @@ export default function App() {
   const downloadExcel = async () => {
     const loading = toast.loading('Generando reporte Excel...');
     try {
+      const { exportToExcel, prepareExportData } = await import('./excelService');
+      
       const isDocente = entityType === 'docente';
       const recordsToExport = isDocente ? combinedRecords : combinedStudentRecords;
       const absencesToExport = isDocente ? combinedAbsences : combinedStudentAbsences;
@@ -499,7 +498,9 @@ export default function App() {
     }
   };
 
-  const downloadPDF = () => {
+  const downloadPDF = async () => {
+    const { exportToPDF } = await import('./pdfService');
+    
     const isDocente = entityType === 'docente';
     const absences = isDocente ? combinedAbsences : combinedStudentAbsences;
     const justifiedAbsences = absences.filter(a => a.status === 'JUSTIFICADA');
